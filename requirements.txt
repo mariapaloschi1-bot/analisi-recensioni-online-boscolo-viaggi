@@ -2,6 +2,4 @@ streamlit
 pandas
 requests
 numpy
-python-docx
-google-generativeai
-openai
+huggingface_hub
