@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v4.3 - Final Enterprise Edition by Maria
-Full integration with robust API error and status handling.
+Reviews Analyzer v4.4 - Final Enterprise Edition by Maria (con gestione errori robusta)
 """
 
 import streamlit as st
@@ -15,8 +14,6 @@ import logging
 from openai import OpenAI
 from typing import Dict, List
 import threading
-from docx import Document
-import io
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(
@@ -51,16 +48,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 if 'data' not in st.session_state:
-    st.session_state.data = {'trustpilot': [], 'google': [], 'tripadvisor': [], 'analysis_results': None, 'seo_analysis': None}
+    st.session_state.data = {'trustpilot': [], 'google': [], 'tripadvisor': []}
 if 'flags' not in st.session_state:
-    st.session_state.flags = {'data_imported': False, 'analysis_done': False}
+    st.session_state.flags = {'data_imported': False}
 
 # ============================================================================
 # FUNZIONI API REALI E HELPER
 # ============================================================================
 
 def safe_api_call_with_progress(api_function, *args, **kwargs):
-    progress_bar = st.progress(0, text=f"Inizializzazione chiamata a {api_function.__name__}...")
+    progress_text = f"Chiamata a {api_function.__name__} in corso..."
+    my_bar = st.progress(0, text=progress_text)
     result, error = None, None
     def api_wrapper():
         nonlocal result, error
@@ -70,11 +68,16 @@ def safe_api_call_with_progress(api_function, *args, **kwargs):
             error = e
     thread = threading.Thread(target=api_wrapper)
     thread.start()
+    
+    # Anima la barra mentre il thread lavora in background
     while thread.is_alive():
-        progress_bar.progress(50, text="Elaborazione in corso su DataForSEO... L'operazione può richiedere diversi minuti.")
+        progress_text_update = "Elaborazione in corso su DataForSEO... L'operazione può richiedere diversi minuti. Attendere..."
+        my_bar.progress(50, text=progress_text_update)
         time.sleep(5)
+    
     thread.join()
-    progress_bar.empty()
+    my_bar.empty()
+
     if error:
         raise error
     return result
@@ -91,38 +94,35 @@ def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
 
 def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
     result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}"
-    for attempt in range(60): # Tenta per 10 minuti
+    for attempt in range(60): # Tenta per 10 minuti (60 tentativi * 10 secondi)
         time.sleep(10)
         logger.info(f"Tentativo {attempt+1}/60 per il task {task_id}")
         response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
+        response.raise_for_status()
         data = response.json()
         
-        if data.get("tasks_error", 1) > 0 and data["tasks"][0]["status_code"] != 20100:
-             msg = data['tasks'][0]['status_message']
-             # SE L'ERRORE È "Task Handed", NON È UN ERRORE, CONTINUA AD ASPETTARE
-             if "handed" in msg.lower():
-                 logger.info(f"Task {task_id} è in stato 'Handed'. Continuo ad attendere.")
-                 continue
-             raise Exception(f"Errore API (Recupero Task): {msg}")
-        
         task = data["tasks"][0]
+        status_code = task.get("status_code")
         status_message = (task.get("status_message") or "").lower()
-        
+
         # Se il task è completato con successo
-        if task["status_code"] == 20000:
+        if status_code == 20000:
+            logger.info(f"Task {task_id} completato con successo.")
             items = []
             if task.get("result"):
                 for page in task["result"]:
                     if page and page.get("items"):
                         items.extend(page["items"])
             return items
+            
         # Se il task è ancora in elaborazione, in coda, o "handed"
-        elif task["status_code"] in [20100, 40602] or "queue" in status_message or "handed" in status_message:
+        elif status_code in [20100, 40602] or "queue" in status_message or "handed" in status_message:
              logger.info(f"Task {task_id} ancora in elaborazione (Status: {status_message}). Continuo ad attendere.")
-             continue
-        # Altrimenti, è un errore
+             continue # Continua il ciclo di polling
+             
+        # Altrimenti, è un errore definitivo
         else:
-            raise Exception(f"Stato task non valido: {task.get('status_code')} - {task.get('status_message')}")
+            raise Exception(f"Stato task non valido: {status_code} - {task.get('status_message')}")
 
     raise Exception("Timeout: il task ha impiegato troppo tempo per essere completato.")
 
@@ -143,8 +143,6 @@ def fetch_tripadvisor_reviews(ta_url, limit):
     payload = [{"url": ta_url, "depth": limit, "sort_by": "newest", "language": "it"}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
-
-# ... (Altre funzioni di analisi come analyze_reviews_for_seo)
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE
@@ -195,7 +193,6 @@ with tab1:
             except Exception as e:
                 st.error(f"Errore Google: {e}")
 
-    # Riepilogo dati... (come prima)
     st.markdown("---")
     st.subheader("Riepilogo Dati Importati")
     counts = {"Trustpilot": len(st.session_state.data['trustpilot']), "Google": len(st.session_state.data['google']), "TripAdvisor": len(st.session_state.data['tripadvisor'])}
@@ -207,7 +204,6 @@ with tab1:
             for i, platform in enumerate(active_platforms):
                 cols[i].metric(label=f"📝 {platform}", value=counts[platform])
 
-# ... (Le altre schede rimangono invariate per ora) ...
 with tab2:
     st.header("📊 Dashboard Analisi")
     st.info("Funzionalità di analisi in costruzione.")
