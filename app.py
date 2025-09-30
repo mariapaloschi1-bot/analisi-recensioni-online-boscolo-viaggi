@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v4.6 - Final Enterprise Edition by Maria
+Reviews Analyzer v4.5 - Final Enterprise Edition by Maria
 Corrected API payloads for Google and TripAdvisor based on official documentation.
 """
 
@@ -87,7 +87,7 @@ def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
 
 def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
     result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}"
-    for attempt in range(60): # Tenta per 10 minuti
+    for attempt in range(60):
         time.sleep(10)
         logger.info(f"Tentativo {attempt+1}/60 per il task {task_id}")
         response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
@@ -119,13 +119,13 @@ def fetch_trustpilot_reviews(tp_url, limit):
     return get_task_results("business_data/trustpilot/reviews", task_id)
 
 def fetch_google_reviews(place_id, limit):
-    # CORREZIONE FINALE: Rimosso 'language_name' come da documentazione per il task_post
+    # CORREZIONE: Rimosso 'language_name' come da documentazione per il task_post
     payload = [{"place_id": place_id, "depth": limit}]
     task_id = post_task_and_get_id("business_data/google/reviews/task_post", payload)
     return get_task_results("business_data/google/reviews", task_id)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
-    # CORREZIONE FINALE: Il payload corretto secondo la documentazione usa 'url'
+    # CORREZIONE: Il payload corretto secondo la documentazione usa 'url'
     payload = [{"url": ta_url, "depth": limit}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
@@ -194,7 +194,7 @@ with tab1:
 # Le altre schede rimangono invariate per ora
 with tab2:
     st.header("📊 Dashboard Analisi")
-    st.info("Funzionalità di analisi in costruzione. Una volta importati i dati, qui potrai avviare le analisi.")
+    st.info("Funzionalità di analisi in costruzione.")
 with tab3:
     st.header("📥 Export")
     st.info("Funzionalità di export in costruzione.")
