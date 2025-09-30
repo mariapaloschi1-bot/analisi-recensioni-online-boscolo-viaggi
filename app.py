@@ -11,14 +11,15 @@ import time
 import json
 import re
 import numpy as np
-import random
 from datetime import datetime
 import logging
 from openai import OpenAI
 from typing import Dict, List, Optional
 from collections import Counter
+import io
+from docx import Document
 
-# --- CONFIGURAZIONE PAGINA (DEVE essere la prima chiamata a st) ---
+# --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(
     page_title="Boscolo Viaggi Reviews",
     page_icon="✈️",
@@ -40,16 +41,9 @@ try:
     DFSEO_PASS = st.secrets["DFSEO_PASS"]
     CREDENTIALS_OK = True
 except (KeyError, FileNotFoundError):
-    st.error("⚠️ Credenziali API (OPENAI_API_KEY, DFSEO_LOGIN, DFSEO_PASS) non trovate! Aggiungile nei Secrets di Streamlit Cloud.")
+    st.error("⚠️ Credenziali API (OPENAI_API_KEY, DFSEO_LOGIN, DFSEO_PASS) non trovate! Aggiungile nei Secrets di Streamlit Cloud per far funzionare l'app.")
     CREDENTIALS_OK = False
     st.stop()
-
-# --- Controllo librerie avanzate ---
-try:
-    import plotly.express as px
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
 
 # CSS personalizzato
 st.markdown("""
@@ -62,74 +56,124 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- STATO DELL'APPLICAZIONE (Session State) ---
+# --- STATO DELL'APPLICAZIONE ---
 if 'data' not in st.session_state:
     st.session_state.data = {
         'trustpilot': [], 'google': [], 'tripadvisor': [],
-        'extended': {'all_reviews': [], 'total_count': 0},
-        'analysis': None, 'seo_analysis': None
+        'analysis_results': None, 'seo_analysis': None
     }
 if 'flags' not in st.session_state:
     st.session_state.flags = {'data_imported': False, 'analysis_done': False}
 
-
 # ============================================================================
-# FUNZIONI API REALI E ANALISI AVANZATA
-# (Implementazioni complete basate sul codice del tuo amico)
+# FUNZIONI API REALI
 # ============================================================================
 
-def api_call_simulation(api_name: str, limit: int) -> List[Dict]:
-    """Simula una chiamata API che richiede tempo e restituisce dati realistici."""
-    with st.spinner(f"Chiamata a {api_name} in corso (simulazione)..."):
-        time.sleep(random.uniform(2, 4))
-        common_phrases = [
-            "L'organizzazione del viaggio è stata impeccabile.", "La guida era molto preparata e gentile.",
-            "Il prezzo era un po' alto ma ne è valsa la pena.", "Abbiamo avuto un problema con la camera d'albergo.",
-            "Consiglio vivamente questo tour operator, esperienza fantastica.", "Vorrei sapere se offrite anche viaggi per famiglie con bambini piccoli?",
-            "Tutto perfetto, dal booking all'assistenza clienti.", "Il servizio clienti deve migliorare, tempi di attesa lunghi."
-        ]
-        return [{'rating': random.randint(1, 5), 'review_text': random.choice(common_phrases) + f" ({i+1})"} for i in range(limit)]
+def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
+    """Invia un task a DataForSEO e restituisce il task ID."""
+    url = f"https://api.dataforseo.com/v3/{endpoint}"
+    response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload)
+    response.raise_for_status()
+    data = response.json()
+    
+    if data["tasks_error"] > 0:
+        raise Exception(f"Errore nella creazione del task: {data['tasks'][0]['status_message']}")
+    
+    return data["tasks"][0]["id"]
+
+def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
+    """Recupera i risultati di un task da DataForSEO con polling."""
+    result_url = f"https://api.dataforseo.com/v3/{endpoint}/{task_id}"
+    max_attempts = 60  # Aumentato per task più lunghi
+    
+    for attempt in range(max_attempts):
+        time.sleep(10)  # Attesa tra i tentativi
+        response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
+        data = response.json()
+        
+        if data["tasks_error"] > 0:
+            raise Exception(f"Errore nel recupero del task: {data['tasks'][0]['status_message']}")
+        
+        task = data["tasks"][0]
+        if task["status_code"] == 20000: # Task completato
+            if task.get("result"):
+                return task["result"][0].get("items", [])
+            return [] # Task completato ma senza risultati
+    
+    raise Exception("Timeout: il task ha impiegato troppo tempo per essere completato.")
+
+def fetch_trustpilot_reviews(tp_url, limit):
+    domain = re.search(r"/review/([^/?]+)", tp_url).group(1)
+    payload = [{"domain": domain, "depth": limit, "sort_by": "recency"}]
+    task_id = post_task_and_get_id("business_data/trustpilot/reviews/task_post", payload)
+    return get_task_results("business_data/trustpilot/reviews/task_get", task_id)
+
+def fetch_google_reviews(place_id, limit):
+    payload = [{"place_id": place_id, "depth": limit, "sort_by": "newest", "language_name": "Italian"}]
+    task_id = post_task_and_get_id("business_data/google/my_business_info/task_post", payload) # Endpoint corretto
+    return get_task_results("business_data/google/reviews/task_get", task_id)
+
+def fetch_tripadvisor_reviews(ta_url, limit):
+    payload = [{"url_path": ta_url, "depth": limit, "sort_by": "newest", "language": "it"}]
+    task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
+    return get_task_results("business_data/tripadvisor/reviews/task_get", task_id)
+
+# ============================================================================
+# FUNZIONI DI ANALISI AVANZATA
+# ============================================================================
 
 def analyze_reviews_for_seo(reviews: List[Dict]) -> Dict:
-    """Esegue un'analisi SEO approfondita, inclusa la generazione di FAQ."""
+    """Esegue un'analisi SEO approfondita e genera FAQ con AI."""
     with st.spinner("Esecuzione analisi SEO e generazione FAQ con AI..."):
-        time.sleep(5) # Simula l'elaborazione AI
-        
         all_texts = [r.get('review_text', '') for r in reviews if r.get('review_text')]
-        if not all_texts:
-            return {'error': 'Nessun testo da analizzare'}
+        if len(all_texts) < 3: return {'error': 'Dati insufficienti per analisi SEO'}
+
+        # Prepara contesto per OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        sample_reviews_text = "\n---\n".join([r[:300] for r in all_texts[:20]])
         
-        # Simula estrazione N-grammi
-        trigrams = Counter(['organizzazione del viaggio', 'guida molto preparata', 'problema con camera', 'servizio clienti migliorare']).most_common()
+        prompt = f"""
+        Sei un esperto SEO e Content Strategist. Analizza queste recensioni reali per un tour operator di nome 'Boscolo Viaggi'.
         
-        # Simula generazione FAQ da OpenAI
-        generated_faqs = [
-            {
-                "question": "Come è l'organizzazione dei viaggi?",
-                "category": "esperienza", "priority": "high",
-                "suggested_answer": "La maggior parte dei clienti descrive l'organizzazione come 'impeccabile' e 'perfetta'. Ci prendiamo cura di ogni dettaglio, dal booking fino al rientro, per garantire un'esperienza senza stress."
-            },
-            {
-                "question": "Le guide turistiche sono competenti?",
-                "category": "servizi", "priority": "high",
-                "suggested_answer": "Sì, le nostre guide sono uno dei nostri punti di forza più apprezzati. I clienti le descrivono costantemente come 'molto preparate', 'gentili' e capaci di arricchire l'esperienza di viaggio."
-            },
-            {
-                "question": "Cosa succede se ho un problema durante il viaggio?",
-                "category": "problemi", "priority": "medium",
-                "suggested_answer": "La nostra assistenza clienti è disponibile per risolvere qualsiasi imprevisto, come problemi con le camere d'albergo. Stiamo lavorando per ridurre i tempi di attesa e offrire un supporto ancora più rapido ed efficiente."
-            }
-        ]
+        RECENSIONI REALI (ESTRATTI):
+        {sample_reviews_text}
         
-        return {
-            'total_reviews_analyzed': len(reviews),
-            'top_trigrams': dict(trigrams),
-            'faq_generation': {'generated_faqs': generated_faqs},
-            'seo_opportunities': {
-                'content_ideas': [{'topic': 'organizzazione viaggio', 'seo_value': 'Alto'}],
-                'quick_wins': [{'action': 'Create FAQ Schema', 'details': 'Focus su: organizzazione, guide, assistenza'}]
-            }
-        }
+        TASK:
+        1.  **Estrai i 5 temi (N-grammi) più importanti e ricorrenti** che emergono dalle conversazioni.
+        2.  **Genera 5 proposte di FAQ** basate sulle domande implicite o esplicite e sui problemi/punti di forza menzionati. Le FAQ devono essere utili per un utente che sta valutando un acquisto.
+        3.  **Identifica 3 opportunità di contenuto SEO** (es. articoli di blog, pagine di destinazione) basate sui temi più caldi.
+        
+        Fornisci la risposta in formato JSON con questa struttura esatta:
+        {{
+          "top_themes": [
+            {{"theme": "tema 1", "description": "Spiegazione del tema"}},
+            {{"theme": "tema 2", "description": "Spiegazione del tema"}}
+          ],
+          "faq_proposals": [
+            {{"question": "Domanda 1", "suggested_answer": "Risposta suggerita basata sulle recensioni."}},
+            {{"question": "Domanda 2", "suggested_answer": "Risposta suggerita basata sulle recensioni."}}
+          ],
+          "content_opportunities": [
+            {{"topic": "Argomento per contenuto 1", "content_type": "Tipo di contenuto (es. Articolo Blog)", "seo_value": "Valore SEO (Alto/Medio/Basso)"}},
+            {{"topic": "Argomento per contenuto 2", "content_type": "Tipo di contenuto", "seo_value": "Valore SEO"}}
+          ]
+        }}
+        """
+        
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Sei un assistente SEO che fornisce output strutturati in JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        try:
+            return json.loads(completion.choices[0].message.content)
+        except (json.JSONDecodeError, IndexError) as e:
+            logger.error(f"Errore parsing risposta AI per SEO: {e}")
+            return {"error": "L'analisi AI non ha restituito un formato valido."}
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE
@@ -137,51 +181,54 @@ def analyze_reviews_for_seo(reviews: List[Dict]) -> Dict:
 
 st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.info("Dashboard di analisi recensioni per Boscolo Viaggi.")
-    st.markdown("---")
-    # Aggiungi qui un riepilogo dei dati caricati se vuoi
-
 # --- TABS ---
 tab1, tab2, tab3 = st.tabs(["🌍 Import Dati", "📊 Dashboard Analisi", "📥 Export"])
 
 # --- TAB 1: IMPORT ---
 with tab1:
-    st.markdown("### 🌍 Importa Dati (Modalità Simulazione)")
-    st.warning("Le chiamate API sono simulate per rapidità e per evitare costi. I dati generati sono realistici per testare le analisi.")
-    
+    st.markdown("### 🌍 Importa Dati Reali dalle Piattaforme")
+    if not CREDENTIALS_OK: st.stop()
+
     col1, col2 = st.columns(2)
     with col1.expander("🌟 Trustpilot", expanded=True):
-        tp_limit = st.slider("N. Recensioni Trustpilot", 50, 2000, 200, key="tp_slider")
+        tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscolo.com", key="tp_url_input")
+        tp_limit = st.slider("Max Recensioni TP", 50, 1000, 100, key="tp_slider")
         if st.button("Importa da Trustpilot", use_container_width=True):
-            reviews = api_call_simulation("Trustpilot", tp_limit)
-            st.session_state.data['trustpilot'] = reviews
-            st.session_state.flags['data_imported'] = True
-            st.success(f"{len(reviews)} recensioni importate!"); time.sleep(1); st.rerun()
-    
-    with col2.expander("📍 Google Reviews", expanded=True):
-        g_limit = st.slider("N. Recensioni Google", 50, 2000, 200, key="g_slider")
+            reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
+            if reviews:
+                st.session_state.data['trustpilot'] = reviews
+                st.session_state.flags['data_imported'] = True
+                st.success(f"{len(reviews)} recensioni REALI importate!"); time.sleep(1); st.rerun()
+
+    with col2.expander("✈️ TripAdvisor", expanded=True):
+        ta_url = st.text_input("URL TripAdvisor", "https://www.tripadvisor.it/Attraction_Review-g187867-d24108558-Reviews-Boscolo_Viaggi-Padua_Province_of_Padua_Veneto.html", key="ta_url_input")
+        ta_limit = st.slider("Max Recensioni TA", 50, 1000, 100, key="ta_slider")
+        if st.button("Importa da TripAdvisor", use_container_width=True):
+            reviews = safe_api_call_with_progress(fetch_tripadvisor_reviews, ta_url, ta_limit)
+            if reviews:
+                st.session_state.data['tripadvisor'] = reviews
+                st.session_state.flags['data_imported'] = True
+                st.success(f"{len(reviews)} recensioni REALI importate!"); time.sleep(1); st.rerun()
+
+    with st.expander("📍 Google Reviews"):
+        g_place_id = st.text_input("Google Place ID", "ChIJ-R_d-iV-1BIRsA7DW2s-2GA", key="g_id_input", help="Questo è il Place ID per 'Boscolo Tours S.P.A.'.")
+        g_limit = st.slider("Max Recensioni Google", 50, 1000, 100, key="g_slider")
         if st.button("Importa da Google", use_container_width=True):
-            reviews = api_call_simulation("Google", g_limit)
-            st.session_state.data['google'] = reviews
-            st.session_state.flags['data_imported'] = True
-            st.success(f"{len(reviews)} recensioni importate!"); time.sleep(1); st.rerun()
+            reviews = safe_api_call_with_progress(fetch_google_reviews, g_place_id, g_limit)
+            if reviews:
+                st.session_state.data['google'] = reviews
+                st.session_state.flags['data_imported'] = True
+                st.success(f"{len(reviews)} recensioni REALI importate!"); time.sleep(1); st.rerun()
 
     st.markdown("---")
     st.subheader("Riepilogo Dati Importati")
-    
-    counts = {
-        "Trustpilot": len(st.session_state.data['trustpilot']),
-        "Google": len(st.session_state.data['google']),
-    }
+    counts = {"Trustpilot": len(st.session_state.data['trustpilot']), "Google": len(st.session_state.data['google']), "TripAdvisor": len(st.session_state.data['tripadvisor'])}
     total_items = sum(counts.values())
-
     if total_items > 0:
-        cols = st.columns(len(counts))
-        for i, (platform, count) in enumerate(counts.items()):
-            with cols[i]:
-                st.metric(label=f"📝 {platform}", value=count)
+        active_platforms = [p for p, c in counts.items() if c > 0]
+        cols = st.columns(len(active_platforms))
+        for i, platform in enumerate(active_platforms):
+            cols[i].metric(label=f"📝 {platform}", value=counts[platform])
     else:
         st.info("Nessun dato ancora importato.")
 
@@ -191,62 +238,47 @@ with tab2:
     if not st.session_state.flags['data_imported']:
         st.info("⬅️ Importa dati dal tab 'Import Dati' per poter eseguire un'analisi.")
     else:
-        if st.button("🚀 Esegui Tutte le Analisi (Base + SEO/AI)", type="primary", use_container_width=True):
-            all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google']
-            
-            # Esecuzione Analisi Base
-            st.session_state.data['analysis'] = analyze_reviews_basic(all_reviews)
-            
-            # Esecuzione Analisi SEO/FAQ
-            st.session_state.data['seo_analysis'] = analyze_reviews_for_seo(all_reviews)
+        if st.button("🚀 Esegui Analisi SEO e Generazione FAQ (AI)", type="primary", use_container_width=True):
+            all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google'] + st.session_state.data['tripadvisor']
+            if len(all_reviews) > 0:
+                st.session_state.data['seo_analysis'] = analyze_reviews_for_seo(all_reviews)
+                st.session_state.flags['analysis_done'] = True
+                st.success("Analisi SEO e generazione FAQ completate!")
+                st.balloons()
+                time.sleep(1); st.rerun()
+            else:
+                st.warning("Nessuna recensione da analizzare.")
 
-            st.session_state.flags['analysis_done'] = True
-            st.success("Tutte le analisi sono state completate!")
-            st.balloons()
-            time.sleep(1); st.rerun()
-        
         st.markdown("---")
-
-        # --- SEZIONE VISUALIZZAZIONE RISULTATI ---
+        
         if st.session_state.flags['analysis_done']:
-            
-            analysis_results = st.session_state.data.get('analysis', {})
-            seo_results = st.session_state.data.get('seo_analysis', {})
-
-            st.subheader("🔬 Risultati Analisi di Base")
-            if analysis_results:
-                st.metric("Recensioni Totali Analizzate", analysis_results.get('total', 0))
-                st.metric("Rating Medio (Simulato)", f"{analysis_results.get('avg_rating', 0)} ⭐")
-            
-            st.subheader("📈 Risultati Analisi SEO & Contenuti")
-            if seo_results:
-                # FAQ GENERATE
+            seo_results = st.session_state.data.get('seo_analysis')
+            if seo_results and 'error' not in seo_results:
+                st.subheader("📈 Risultati Analisi SEO & Contenuti")
+                
                 with st.expander("❓ **Proposte di FAQ Generate con AI**", expanded=True):
-                    faqs = seo_results.get('faq_generation', {}).get('generated_faqs', [])
+                    faqs = seo_results.get('faq_proposals', [])
                     if faqs:
-                        for i, faq in enumerate(faqs):
-                            st.markdown(f"**Domanda {i+1}:** {faq['question']}")
+                        for i, faq in enumerate(faqs, 1):
+                            st.markdown(f"**Domanda {i}:** {faq['question']}")
                             st.info(f"**Risposta Suggerita:** {faq['suggested_answer']}")
                             st.markdown("---")
-                    else:
-                        st.warning("Nessuna FAQ generata.")
-
-                # OPPORTUNITÀ SEO
-                with st.expander("💡 **Opportunità SEO Identificate**"):
-                    opps = seo_results.get('seo_opportunities', {})
-                    if opps.get('content_ideas'):
-                        st.markdown("**Idee per Contenuti:**")
-                        for idea in opps['content_ideas']:
-                            st.success(f"- Crea una pagina/articolo sul tema: **{idea['topic']}** (Valore SEO: {idea['seo_value']})")
-                    if opps.get('quick_wins'):
-                        st.markdown("**Azioni Rapide (Quick Wins):**")
-                        for win in opps['quick_wins']:
-                            st.success(f"- **{win['action']}:** {win['details']}")
+                
+                with st.expander("💡 **Opportunità di Contenuto SEO**"):
+                    opps = seo_results.get('content_opportunities', [])
+                    if opps:
+                        for idea in opps:
+                            st.success(f"**{idea['content_type']} sul tema '{idea['topic']}'** (Valore SEO: {idea['seo_value']})")
+                
+                with st.expander("🔥 **Temi Principali Estratti**"):
+                    themes = seo_results.get('top_themes', [])
+                    if themes:
+                        for theme in themes:
+                            st.markdown(f"**{theme['theme'].title()}**: *{theme['description']}*")
+            elif seo_results:
+                st.error(f"Errore durante l'analisi SEO: {seo_results['error']}")
 
 # --- TAB 3: EXPORT ---
 with tab3:
     st.header("📥 Esporta Dati e Report")
-    if not st.session_state.flags['analysis_done']:
-        st.info("Esegui prima un'analisi per abilitare l'export.")
-    else:
-        st.info("Qui potrai scaricare i report in formato CSV, DOCX o JSON.")
+    st.info("Funzionalità di export in costruzione.")
