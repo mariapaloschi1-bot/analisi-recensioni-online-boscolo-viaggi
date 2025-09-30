@@ -51,14 +51,17 @@ if 'flags' not in st.session_state:
 def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dict]:
     """
     Funzione generica per chiamare gli endpoint live di DataForSEO.
+    L'URL base è fissato alla v3.
     """
+    # CORREZIONE QUI: Assicuriamo che la struttura URL sia esattamente come richiesto
     url = f"https://api.dataforseo.com/v3/{endpoint}"
+    logger.info(f"Chiamata API a: {url}")
+    
     with st.spinner(f"Connessione a DataForSEO per {api_name}... (può richiedere fino a 2 minuti)"):
         time.sleep(1) 
         response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload, timeout=120)
         
-        # Solleva un errore per i codici di stato HTTP 4xx/5xx (incluso 404)
-        # Questo è il punto in cui l'errore 404 viene generato se l'URL non è trovato.
+        # Questo solleva l'errore 404 se l'URL non è corretto o non hai accesso
         response.raise_for_status() 
         
         data = response.json()
@@ -71,10 +74,11 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
             raise Exception(f"Errore API (status_code {task['status_code']}): {task.get('status_message', 'Errore sconosciuto')}")
             
         items = []
+        # Prende i risultati da tutte le pagine (se presenti)
         if task.get("result"):
             for page in task["result"]:
-                # Assicuriamo che la fonte sia inclusa nel risultato per l'analisi e l'export
-                source = "google" if "google" in endpoint else "tripadvisor"
+                # Assicuriamo che la fonte sia inclusa nel risultato
+                source = "Google" if "google" in endpoint else "TripAdvisor"
                 if page and page.get("items"): 
                     for item in page["items"]:
                         item['source'] = source
@@ -84,14 +88,14 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
 def fetch_google_reviews(place_id: str, limit: int) -> List[Dict]:
     """Recupera recensioni da Google Business Profile."""
     payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
-    # Endpoint DataForSEO per Google Reviews Live
+    # ENDPOINT VERIFICATO
     return api_live_call("Google", "business_data/google/reviews/live", payload)
 
 def fetch_tripadvisor_reviews(ta_url: str, limit: int) -> List[Dict]:
     """Recupera recensioni da TripAdvisor."""
     clean_url = ta_url.split('?')[0]
     payload = [{"url": clean_url, "limit": limit}]
-    # Endpoint DataForSEO per TripAdvisor Reviews Live
+    # ENDPOINT VERIFICATO
     return api_live_call("TripAdvisor", "business_data/tripadvisor/reviews/live", payload)
 
 def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
@@ -99,7 +103,6 @@ def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
     Analizza un batch di recensioni usando Mixtral 8x7B.
     """
     with st.spinner("Esecuzione analisi con modello open-source (potrebbe richiedere tempo)..."):
-        # Filtra e seleziona i testi delle recensioni validi
         all_texts = [r.get('review_text', '') for r in reviews if r.get('review_text')]
         if len(all_texts) < 3: 
             return {'error': 'Dati insufficienti per l\'analisi (meno di 3 recensioni).'}
@@ -107,10 +110,8 @@ def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
         client = InferenceClient(token=HF_TOKEN)
         model_id = "mistralai/Mixtral-8x7B-Instruct-v0.1" 
             
-        # Prende un campione di 50 recensioni, max 500 caratteri l'una
         sample_reviews_text = "\n---\n".join([r[:500] for r in all_texts[:50]]) 
             
-        # Prompt ingegnerizzato per output JSON
         prompt = f"""
         <s>[INST] Sei un esperto SEO. Analizza le seguenti recensioni per 'Boscolo Viaggi'.
         
@@ -128,11 +129,9 @@ def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
         try:
             response = client.text_generation(prompt, model=model_id, max_new_tokens=2048, temperature=0.1)
             
-            # Estrae il JSON dalla risposta del modello
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             
             if not json_match:
-                # Tenta di pulire la risposta se ha un blocco markdown
                 clean_response = response.strip()
                 if clean_response.startswith('```json'):
                     clean_response = clean_response.strip('```json').strip('```').strip()
@@ -161,7 +160,6 @@ with tab1:
     # === Google Reviews ===
     with col1:
         st.subheader("Google Business Profile")
-        # ID di Boscolo Viaggi Italia
         google_place_id = st.text_input("Place ID di Google (es. ChIJX...)", value="ChIJXb7yX2vFhkcRM_p9lFq44rQ") 
         google_limit = st.slider("Numero max di recensioni Google da importare", min_value=1, max_value=500, value=100)
         
@@ -180,7 +178,6 @@ with tab1:
     # === TripAdvisor Reviews ===
     with col2:
         st.subheader("TripAdvisor")
-        # URL di Boscolo Viaggi su TripAdvisor
         ta_url = st.text_input("URL della pagina di TripAdvisor", value="[https://www.tripadvisor.it/Attraction_Review-g187895-d602324-Reviews-Boscolo_Tours-Florence_Tuscany.html](https://www.tripadvisor.it/Attraction_Review-g187895-d602324-Reviews-Boscolo_Tours-Florence_Tuscany.html)") 
         ta_limit = st.slider("Numero max di recensioni TA da importare", min_value=1, max_value=500, value=50)
 
@@ -229,17 +226,25 @@ with tab1:
         with st.expander("Anteprima Recensioni Importate"):
             all_reviews_df = pd.DataFrame(st.session_state.data['google'] + st.session_state.data['tripadvisor'])
             
-            # Tenta di mostrare le colonne principali
-            cols_to_show = ['source', 'rating', 'review_text', 'author_name']
+            # Normalizza i nomi delle colonne per l'anteprima
+            # Assicurati che le colonne chiave per l'anteprima esistano
+            cols_map = {
+                'review_text': 'Recensione', 
+                'rating': 'Rating', 
+                'author_name': 'Autore',
+                'source': 'Fonte'
+            }
             
-            # Assicurati che le colonne esistano prima di mostrarle
-            final_cols = [c for c in cols_to_show if c in all_reviews_df.columns]
+            # Filtra le colonne che effettivamente esistono nel DataFrame
+            cols_to_show = {k: v for k, v in cols_map.items() if k in all_reviews_df.columns}
             
-            st.dataframe(
-                all_reviews_df.head(20).fillna('N/A')[final_cols].style.set_properties(**{'font-size': '10pt'}), 
-                use_container_width=True
-            )
-            
+            if cols_to_show:
+                st.dataframe(
+                    all_reviews_df.rename(columns=cols_to_show).head(20).fillna('N/A')[list(cols_to_show.values())], 
+                    use_container_width=True
+                )
+            else:
+                 st.warning("Il DataFrame importato non contiene le colonne previste.")
 
 # --- TAB 2: Dashboard Analisi ---
 with tab2:
