@@ -1,4 +1,3 @@
-%%writefile reviews_analyzer.py
 #!/usr/bin/env python3
 """
 Reviews Analyzer v2.1 ENTERPRISE EDITION
