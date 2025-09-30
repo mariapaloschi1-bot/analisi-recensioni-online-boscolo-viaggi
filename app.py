@@ -9,19 +9,8 @@ Autore: Antonio De Luca
 
 import streamlit as st
 import pandas as pd
-import requests
 import time
-import json
-import re
-import numpy as np
-from datetime import datetime, timedelta
-import logging
-from docx import Document
-from openai import OpenAI
-from collections import Counter
-import os
-from urllib.parse import urlparse, parse_qs
-import threading
+import random # Importato per generare dati casuali
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 
@@ -32,20 +21,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ============================================================================
-# ENTERPRISE LIBRARIES - Placeholder
-# ============================================================================
-try:
-    import plotly.express as px
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    px = None
-    PLOTLY_AVAILABLE = False
-
-# Configurazione logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
 
 # CSS personalizzato
 st.markdown("""
@@ -81,18 +56,39 @@ def show_message(message, type="info"):
 
 # --- FUNZIONI MOCK (Simulate) ---
 def fetch_trustpilot_reviews(url, limit):
-    # Simula una chiamata API
     time.sleep(1.5)
-    return [{'rating': 5, 'review_text': 'Ottimo tour!', 'user': {'name': 'Utente Mock'}, 'timestamp': '2025-01-01'}]
+    # NUOVO: Genera un numero di recensioni pari a 'limit'
+    reviews = []
+    for i in range(limit):
+        reviews.append({
+            'rating': random.randint(1, 5),
+            'review_text': f'Questa è una recensione simulata numero {i+1}.',
+            'user': {'name': f'Utente Mock {i+1}'},
+            'timestamp': '2025-01-01'
+        })
+    return reviews
 
-def fetch_google_extended_reviews(name):
-    # Simula una chiamata API
+def fetch_google_extended_reviews(name, limit):
     time.sleep(1.5)
-    return {'total_count': 1, 'all_reviews': [{'rating': 4, 'review_text': 'Organizzazione perfetta!', 'review_source': 'Mock Yelp'}]}
+    # NUOVO: Genera un numero di recensioni pari a 'limit'
+    reviews = []
+    for i in range(limit):
+        reviews.append({
+            'rating': random.randint(2, 5),
+            'review_text': f'Recensione estesa simulata numero {i+1}.',
+            'review_source': 'Mock Source'
+        })
+    return {'total_count': limit, 'all_reviews': reviews}
 
 def analyze_reviews(reviews, source):
-    # Simula un'analisi
-    return {'total': len(reviews), 'avg_rating': 4.5, 'sample_strengths': ['Guida esperta', 'Itinerario ben strutturato']}
+    # Simula un'analisi un po' più realistica
+    if not reviews:
+        return {'total': 0, 'avg_rating': 0, 'sample_strengths': []}
+    
+    total_rating = sum(r['rating'] for r in reviews)
+    avg_rating = round(total_rating / len(reviews), 2)
+    
+    return {'total': len(reviews), 'avg_rating': avg_rating, 'sample_strengths': ['Guida esperta', 'Itinerario ben strutturato', 'Buon rapporto qualità/prezzo']}
 
 # --- INTERFACCIA PRINCIPALE ---
 st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
@@ -105,39 +101,41 @@ tab1, tab2, tab3 = st.tabs(["🌍 Multi-Platform Import", "📊 Cross-Platform A
 with tab1:
     st.markdown("### 🌍 Data Import - Target: Boscolo Viaggi")
 
-    # Mostra un messaggio di conferma se i dati sono stati importati
     if st.session_state.data_imported:
-        show_message("Dati importati con successo. Ora puoi avviare l'analisi.", "success")
+        total_tp = len(st.session_state.reviews_data['trustpilot_reviews'])
+        total_ext = st.session_state.reviews_data['extended_reviews']['total_count']
+        show_message(f"Dati importati: {total_tp} da Trustpilot, {total_ext} da Extended Reviews. Ora puoi avviare l'analisi.", "success")
     
-    # Mostra un messaggio di conferma se l'analisi è stata completata
     if st.session_state.analysis_done:
         show_message("Analisi completata! Vai al tab 'Cross-Platform Analysis' per vedere i risultati.", "success")
-
 
     col1, col2 = st.columns(2)
     with col1:
         with st.expander("🌟 Trustpilot", expanded=True):
             trustpilot_url = st.text_input("URL Trustpilot", value="https://it.trustpilot.com/review/boscolo.com")
+            # Lo slider ora controlla il numero di recensioni generate
+            tp_limit = st.slider("Max recensioni Trustpilot", 50, 2000, 1500, key="tp_limit")
             if st.button("📥 Import Trustpilot", use_container_width=True):
-                with st.spinner("Importazione recensioni Trustpilot..."):
-                    st.session_state.reviews_data['trustpilot_reviews'] = fetch_trustpilot_reviews(trustpilot_url, 200)
+                with st.spinner(f"Importo {tp_limit} recensioni da Trustpilot..."):
+                    st.session_state.reviews_data['trustpilot_reviews'] = fetch_trustpilot_reviews(trustpilot_url, tp_limit)
                     st.session_state.data_imported = True
-                    st.session_state.analysis_done = False # Resetta lo stato dell'analisi
+                    st.session_state.analysis_done = False
                 st.rerun()
 
     with col2:
         with st.expander("🔍 Extended Reviews", expanded=True):
             business_name = st.text_input("Nome Business", value="Boscolo Viaggi")
+            # NUOVO: Slider anche per le recensioni estese
+            ext_limit = st.slider("Max recensioni Extended", 50, 2000, 1500, key="ext_limit")
             if st.button("📥 Import Extended Reviews", use_container_width=True):
-                with st.spinner("Importazione recensioni estese..."):
-                    st.session_state.reviews_data['extended_reviews'] = fetch_google_extended_reviews(business_name)
+                with st.spinner(f"Importo {ext_limit} recensioni estese..."):
+                    st.session_state.reviews_data['extended_reviews'] = fetch_google_extended_reviews(business_name, ext_limit)
                     st.session_state.data_imported = True
-                    st.session_state.analysis_done = False # Resetta lo stato dell'analisi
+                    st.session_state.analysis_done = False
                 st.rerun()
 
     st.divider()
 
-    # Mostra il pulsante di analisi solo se i dati sono stati importati
     if st.session_state.data_imported:
         if st.button("📊 Avvia Analisi Multi-Platform", type="primary", use_container_width=True):
             with st.spinner("Analisi in corso..."):
@@ -158,13 +156,41 @@ with tab2:
     if st.session_state.analysis_done and st.session_state.reviews_data['analysis_results']:
         results = st.session_state.reviews_data['analysis_results']
         
+        st.subheader("Riepilogo Totale")
+        total_reviews_analyzed = sum(res['total'] for res in results.values())
+        avg_rating_overall = sum(res['avg_rating'] * res['total'] for res in results.values()) / total_reviews_analyzed if total_reviews_analyzed > 0 else 0
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Totale Recensioni Analizzate", f"{total_reviews_analyzed}")
+        with col2:
+            st.metric("Rating Medio Complessivo", f"{avg_rating_overall:.2f} ⭐")
+
+        st.divider()
+
         if 'trustpilot' in results:
-            st.subheader("🌟 Trustpilot Insights")
-            st.metric("Recensioni Analizzate", results['trustpilot']['total'])
-            st.metric("Rating Medio Stimato", f"{results['trustpilot']['avg_rating']} ⭐")
-            st.write("**Punti di Forza (Esempio):**")
-            for strength in results['trustpilot']['sample_strengths']:
-                st.success(f"• {strength}")
+            with st.container(border=True):
+                st.subheader("🌟 Trustpilot Insights")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Recensioni Analizzate (TP)", results['trustpilot']['total'])
+                with col2:
+                    st.metric("Rating Medio (TP)", f"{results['trustpilot']['avg_rating']} ⭐")
+                st.write("**Punti di Forza (Esempio):**")
+                for strength in results['trustpilot']['sample_strengths']:
+                    st.success(f"• {strength}")
+        
+        if 'extended' in results:
+            with st.container(border=True):
+                st.subheader("🔍 Extended Reviews Insights")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Recensioni Analizzate (Ext)", results['extended']['total'])
+                with col2:
+                    st.metric("Rating Medio (Ext)", f"{results['extended']['avg_rating']} ⭐")
+                st.write("**Punti di Forza (Esempio):**")
+                for strength in results['extended']['sample_strengths']:
+                    st.success(f"• {strength}")
     else:
         st.info("Nessuna analisi ancora eseguita. Vai al tab 'Multi-Platform Import', carica i dati e avvia l'analisi.")
 
