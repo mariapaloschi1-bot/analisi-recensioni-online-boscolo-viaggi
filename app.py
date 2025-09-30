@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v13.0 - Final Enterprise Edition by Maria
-Full restoration of the original, robust, task-based API fetching logic for all platforms.
-All analysis and export tabs are fully functional, using Gemini as the primary AI.
+Reviews Analyzer v12.0 - Final, Complete, and Merged Edition by Maria
+Full restoration of the original script's UI, analysis, and export functionalities,
+combined with corrected API calls and Gemini integration.
 """
 
 import streamlit as st
@@ -17,9 +17,11 @@ from openai import RateLimitError
 from google.api_core import exceptions as google_exceptions
 from typing import Dict, List
 import threading
+from docx import Document
+import io
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Boscolo Viaggi Reviews", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="Boscolo Viaggi Reviews", page_icon="✈️", layout="wide", initial_sidebar_state="expanded")
 
 # ============================================================================
 # CONFIGURAZIONE INIZIALE E CREDENZIALI
@@ -29,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"] # Necessario per compatibilità con funzioni secondarie
     DFSEO_LOGIN = st.secrets["DFSEO_LOGIN"]
     DFSEO_PASS = st.secrets["DFSEO_PASS"]
     genai.configure(api_key=GEMINI_API_KEY)
@@ -37,15 +38,24 @@ except KeyError as e:
     st.error(f"⚠️ Manca una credenziale nei Secrets: {e}.")
     st.stop()
 
-# CSS e Session State
-st.markdown("""<style>/* ... CSS ... */</style>""", unsafe_allow_html=True)
+# CSS E SESSION STATE
+st.markdown("""
+<style>
+    .stApp { background-color: #000000; color: #FFFFFF; }
+    .main-header { text-align: center; padding: 20px; background: linear-gradient(135deg, #005691 0%, #0099FF 25%, #FFD700 75%, #8B5CF6 100%); border-radius: 20px; margin-bottom: 30px; }
+    .stButton > button { background-color: #0099FF; color: #FFFFFF; border: none; }
+    section[data-testid="stSidebar"] { background-color: #1A1A1A; }
+    [data-testid="stMetric"] { background-color: #1a1a1a; padding: 15px; border-radius: 10px; }
+</style>
+""", unsafe_allow_html=True)
+
 if 'data' not in st.session_state:
     st.session_state.data = {'trustpilot': [], 'google': [], 'tripadvisor': [], 'seo_analysis': None}
 if 'flags' not in st.session_state:
     st.session_state.flags = {'data_imported': False, 'analysis_done': False}
 
 # ============================================================================
-# FUNZIONI API REALI E HELPER (Metodo Task-Based Originale)
+# FUNZIONI API REALI E HELPER
 # ============================================================================
 def safe_api_call_with_progress(api_function, *args, **kwargs):
     progress_bar = st.progress(0, text=f"Inizializzazione chiamata a {api_function.__name__}...")
@@ -76,7 +86,7 @@ def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
 
 def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
     result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}"
-    for attempt in range(90): # Tenta per 15 minuti
+    for attempt in range(90):
         time.sleep(10)
         logger.info(f"Tentativo {attempt+1}/90 per il task {task_id}")
         response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
@@ -86,14 +96,12 @@ def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
         status_code = task.get("status_code")
         status_message = (task.get("status_message") or "").lower()
         if status_code == 20000:
-            logger.info(f"Task {task_id} completato.")
             items = []
             if task.get("result"):
                 for page in task["result"]:
-                    if page and page.get("items"): items.extend(page["items"])
+                    if page and page.get("items") is not None: items.extend(page["items"])
             return items
         elif status_code in [20100, 40602] or "queue" in status_message or "handed" in status_message:
-             logger.info(f"Task {task_id} in attesa (Status: {status_message}). Continuo.")
              continue
         else:
             raise Exception(f"Stato task non valido: {status_code} - {task.get('status_message')}")
@@ -118,8 +126,27 @@ def fetch_tripadvisor_reviews(ta_url, limit):
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
 def analyze_reviews_for_seo(reviews: List[Dict]):
-    # ... (Il corpo della funzione di analisi con Gemini è omesso per brevità, ma è completo)
-    pass
+    with st.spinner("Esecuzione analisi SEO e generazione FAQ con Gemini..."):
+        all_texts = [r.get('review_text', '') for r in reviews if r.get('review_text')]
+        if len(all_texts) < 3: return {'error': 'Dati insufficienti'}
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        sample_reviews_text = "\n---\n".join([r[:300] for r in all_texts[:20]])
+        prompt = f"""Sei un esperto SEO. Analizza queste recensioni per 'Boscolo Viaggi'.
+        RECENSIONI: {sample_reviews_text}
+        TASK:
+        1. Estrai i 5 temi più importanti.
+        2. Genera 5 proposte di FAQ.
+        3. Identifica 3 opportunità di contenuto SEO.
+        Rispondi in JSON valido con le chiavi "top_themes", "faq_proposals", "content_opportunities".
+        """
+        try:
+            response = model.generate_content(prompt)
+            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            return json.loads(cleaned_response)
+        except (google_exceptions.ResourceExhausted, google_exceptions.InternalServerError) as e:
+            raise Exception("ERRORE GEMINI: Limiti di utilizzo superati. Controlla il tuo account Google AI Studio.")
+        except Exception as e:
+            raise Exception(f"Analisi AI con Gemini fallita: {e}")
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE
@@ -132,7 +159,7 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1.expander("🌟 Trustpilot", expanded=True):
         tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscolo.com", key="tp_url_input")
-        tp_limit = st.slider("Max Recensioni TP", 50, 1000, 100, key="tp_slider")
+        tp_limit = st.slider("Max Recensioni TP", 50, 1000, 100, key="tp_slider", help="L'API potrebbe restituire meno recensioni del limite impostato.")
         if st.button("Importa da Trustpilot", use_container_width=True):
             try:
                 reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
@@ -140,7 +167,7 @@ with tab1:
                     st.session_state.data['trustpilot'] = reviews; st.session_state.flags['data_imported'] = True
                     st.success(f"{len(reviews)} recensioni importate!"); time.sleep(1); st.rerun()
             except Exception as e: st.error(f"Errore Trustpilot: {e}")
-            
+
     with col2.expander("✈️ TripAdvisor", expanded=True):
         ta_url = st.text_input("URL TripAdvisor", "https://www.tripadvisor.it/Attraction_Review-g187867-d24108558-Reviews-Boscolo_Viaggi-Padua_Province_of_Padua_Veneto.html", key="ta_url_input")
         ta_limit = st.slider("Max Recensioni TA", 50, 1000, 100, key="ta_slider")
@@ -162,13 +189,74 @@ with tab1:
                     st.session_state.data['google'] = reviews; st.session_state.flags['data_imported'] = True
                     st.success(f"{len(reviews)} recensioni importate!"); time.sleep(1); st.rerun()
             except Exception as e: st.error(f"Errore Google: {e}")
-            
-    # Riepilogo...
     
+    st.markdown("---")
+    st.subheader("Riepilogo Dati Importati")
+    counts = {"Trustpilot": len(st.session_state.data['trustpilot']), "Google": len(st.session_state.data['google']), "TripAdvisor": len(st.session_state.data['tripadvisor'])}
+    total_items = sum(counts.values())
+    if total_items > 0:
+        active_platforms = [p for p, c in counts.items() if c > 0]
+        if active_platforms:
+            cols = st.columns(len(active_platforms))
+            for i, platform in enumerate(active_platforms):
+                cols[i].metric(label=f"📝 {platform}", value=counts[platform])
+    else:
+        st.info("Nessun dato ancora importato.")
+
 with tab2:
     st.header("📊 Dashboard Analisi")
-    # ... (Codice completo per l'analisi)
-    
+    if not st.session_state.flags['data_imported']:
+        st.info("⬅️ Importa dati dal tab precedente per eseguire un'analisi.")
+    else:
+        if not st.session_state.flags['analysis_done']:
+            if st.button("🚀 Esegui Analisi SEO e Generazione FAQ (con Gemini)", type="primary", use_container_width=True):
+                all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google'] + st.session_state.data['tripadvisor']
+                if len(all_reviews) > 0:
+                    try:
+                        st.session_state.data['seo_analysis'] = analyze_reviews_for_seo(all_reviews)
+                        st.session_state.flags['analysis_done'] = True
+                        st.success("Analisi completata!"); st.balloons(); time.sleep(1); st.rerun()
+                    except Exception as e:
+                        st.error(f"Si è verificato un errore durante l'analisi: {e}")
+        
+        if st.session_state.flags['analysis_done']:
+            st.markdown("---")
+            seo_results = st.session_state.data.get('seo_analysis')
+            if seo_results and 'error' not in seo_results:
+                st.subheader("📈 Risultati Analisi SEO & Contenuti")
+                with st.expander("❓ **Proposte di FAQ Generate con AI**", expanded=True):
+                    faqs = seo_results.get('faq_proposals', [])
+                    for i, faq in enumerate(faqs, 1):
+                        st.markdown(f"**Domanda {i}:** {faq['question']}")
+                        st.info(f"**Risposta Suggerita:** {faq['suggested_answer']}")
+                with st.expander("💡 **Opportunità di Contenuto SEO**"):
+                    for idea in seo_results.get('content_opportunities', []):
+                        st.success(f"**{idea['content_type']} sul tema '{idea['topic']}'** (Valore SEO: {idea['seo_value']})")
+                with st.expander("🔥 **Temi Principali Estratti**"):
+                    for theme in seo_results.get('top_themes', []):
+                        st.markdown(f"**{theme['theme'].title()}**: *{theme['description']}*")
+            elif seo_results:
+                st.error(f"Errore durante l'analisi SEO: {seo_results['error']}")
+
 with tab3:
     st.header("📥 Export")
-    # ... (Codice completo per l'export)
+    if not st.session_state.flags['data_imported']:
+        st.info("Importa dei dati per abilitare l'export.")
+    else:
+        st.subheader("Esporta i tuoi dati e risultati")
+        all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google'] + st.session_state.data['tripadvisor']
+        if all_reviews:
+            df = pd.DataFrame(all_reviews)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Scarica tutte le recensioni (CSV)", data=csv, file_name="reviews_export.csv", mime="text/csv", use_container_width=True)
+        
+        seo_results = st.session_state.data.get('seo_analysis')
+        if st.session_state.flags['analysis_done'] and seo_results and 'error' not in seo_results:
+            report_text = f"Report Analisi SEO - {datetime.now().strftime('%Y-%m-%d')}\n\n"
+            report_text += "=== TEMI PRINCIPALI ===\n"
+            for theme in seo_results.get('top_themes', []):
+                report_text += f"- {theme['theme'].title()}: {theme['description']}\n"
+            report_text += "\n=== FAQ SUGGERITE ===\n"
+            for faq in seo_results.get('faq_proposals', []):
+                report_text += f"D: {faq['question']}\nR: {faq['suggested_answer']}\n\n"
+            st.download_button("📄 Scarica Report Analisi (TXT)", data=report_text.encode('utf-8'), file_name="seo_report.txt", mime="text/plain", use_container_width=True)
