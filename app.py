@@ -51,7 +51,6 @@ if 'flags' not in st.session_state:
 def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dict]:
     """
     Funzione generica per chiamare gli endpoint live di DataForSEO.
-    Aggiunge logging di debug per gli errori 404.
     """
     url = f"https://api.dataforseo.com/v3/{endpoint}"
     logger.info(f"Tentativo chiamata API a: {url}")
@@ -102,10 +101,10 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
         return items
 
 def fetch_google_reviews(place_id: str, limit: int) -> List[Dict]:
-    """Recupera recensioni da Google Business Profile (tentativo con l'originale business_data)."""
+    """Recupera recensioni da Google Business Profile (tramite l'endpoint Google Maps corretto)."""
     payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
-    # Ritorno all'endpoint originale business_data
-    return api_live_call("Google", "business_data/google/reviews/live", payload)
+    # ✅ ENDPOINT CORRETTO: Passaggio a Google Maps Reviews Live
+    return api_live_call("Google", "google/maps/reviews/live", payload)
 
 def fetch_tripadvisor_reviews(ta_url: str, limit: int) -> List[Dict]:
     """Recupera recensioni da TripAdvisor."""
