@@ -2,5 +2,6 @@ streamlit
 pandas
 requests
 numpy
-google-generativeai
 python-docx
+google-generativeai
+openai
