@@ -119,14 +119,15 @@ def fetch_trustpilot_reviews(tp_url, limit):
     return get_task_results("business_data/trustpilot/reviews", task_id)
 
 def fetch_google_reviews(place_id, limit):
-    # CORREZIONE FINALE BASATA SU DOCUMENTAZIONE UFFICIALE
+    # VERSIONE CORRETTA SENZA 'location_name'
     payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
     task_id = post_task_and_get_id("business_data/google/reviews/task_post", payload)
     return get_task_results("business_data/google/reviews", task_id)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
-    # CORREZIONE FINALE BASATA SU DOCUMENTAZIONE UFFICIALE
-    payload = [{"url": ta_url, "limit": limit, "language": "it"}]
+    # VERSIONE CORRETTA CON 'url'
+    clean_url = ta_url.split('?')[0] # Rimuove parametri extra
+    payload = [{"url": clean_url, "limit": limit}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
