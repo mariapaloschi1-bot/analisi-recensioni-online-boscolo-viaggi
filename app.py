@@ -51,9 +51,7 @@ if 'flags' not in st.session_state:
 def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dict]:
     """
     Funzione generica per chiamare gli endpoint live di DataForSEO.
-    L'URL base è fissato alla v3.
     """
-    # CORREZIONE QUI: Assicuriamo che la struttura URL sia esattamente come richiesto
     url = f"https://api.dataforseo.com/v3/{endpoint}"
     logger.info(f"Chiamata API a: {url}")
     
@@ -74,10 +72,8 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
             raise Exception(f"Errore API (status_code {task['status_code']}): {task.get('status_message', 'Errore sconosciuto')}")
             
         items = []
-        # Prende i risultati da tutte le pagine (se presenti)
         if task.get("result"):
             for page in task["result"]:
-                # Assicuriamo che la fonte sia inclusa nel risultato
                 source = "Google" if "google" in endpoint else "TripAdvisor"
                 if page and page.get("items"): 
                     for item in page["items"]:
@@ -86,16 +82,16 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
         return items
 
 def fetch_google_reviews(place_id: str, limit: int) -> List[Dict]:
-    """Recupera recensioni da Google Business Profile."""
+    """Recupera recensioni da Google Business Profile (tramite Google Maps endpoint)."""
     payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
-    # ENDPOINT VERIFICATO
-    return api_live_call("Google", "business_data/google/reviews/live", payload)
+    # ENDPOINT AGGIORNATO: Passaggio a Google Maps Reviews Live
+    return api_live_call("Google", "google/maps/reviews/live", payload)
 
 def fetch_tripadvisor_reviews(ta_url: str, limit: int) -> List[Dict]:
     """Recupera recensioni da TripAdvisor."""
     clean_url = ta_url.split('?')[0]
     payload = [{"url": clean_url, "limit": limit}]
-    # ENDPOINT VERIFICATO
+    # ENDPOINT LASCIATO IN BUSINESS_DATA
     return api_live_call("TripAdvisor", "business_data/tripadvisor/reviews/live", payload)
 
 def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
@@ -159,7 +155,7 @@ with tab1:
     
     # === Google Reviews ===
     with col1:
-        st.subheader("Google Business Profile")
+        st.subheader("Google Business Profile (Place ID)")
         google_place_id = st.text_input("Place ID di Google (es. ChIJX...)", value="ChIJXb7yX2vFhkcRM_p9lFq44rQ") 
         google_limit = st.slider("Numero max di recensioni Google da importare", min_value=1, max_value=500, value=100)
         
@@ -177,7 +173,7 @@ with tab1:
 
     # === TripAdvisor Reviews ===
     with col2:
-        st.subheader("TripAdvisor")
+        st.subheader("TripAdvisor (URL)")
         ta_url = st.text_input("URL della pagina di TripAdvisor", value="[https://www.tripadvisor.it/Attraction_Review-g187895-d602324-Reviews-Boscolo_Tours-Florence_Tuscany.html](https://www.tripadvisor.it/Attraction_Review-g187895-d602324-Reviews-Boscolo_Tours-Florence_Tuscany.html)") 
         ta_limit = st.slider("Numero max di recensioni TA da importare", min_value=1, max_value=500, value=50)
 
@@ -226,8 +222,6 @@ with tab1:
         with st.expander("Anteprima Recensioni Importate"):
             all_reviews_df = pd.DataFrame(st.session_state.data['google'] + st.session_state.data['tripadvisor'])
             
-            # Normalizza i nomi delle colonne per l'anteprima
-            # Assicurati che le colonne chiave per l'anteprima esistano
             cols_map = {
                 'review_text': 'Recensione', 
                 'rating': 'Rating', 
@@ -235,7 +229,6 @@ with tab1:
                 'source': 'Fonte'
             }
             
-            # Filtra le colonne che effettivamente esistono nel DataFrame
             cols_to_show = {k: v for k, v in cols_map.items() if k in all_reviews_df.columns}
             
             if cols_to_show:
