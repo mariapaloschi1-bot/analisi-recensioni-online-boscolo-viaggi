@@ -3,5 +3,12 @@ pandas
 requests
 numpy
 python-docx
-google-generativeai
 openai
+google-generativeai
+plotly
+scikit-learn
+networkx
+sentence-transformers
+bertopic
+umap-learn
+hdbscan
