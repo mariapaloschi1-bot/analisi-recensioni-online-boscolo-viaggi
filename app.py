@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v8.0 - Final Enterprise Edition by Maria
-Full implementation of UI, real API calls, advanced analysis, and export.
+Reviews Analyzer v9.0 - Final Gemini Edition by Maria
+Full implementation of UI, real API calls, advanced analysis with Gemini, and export.
 """
 
 import streamlit as st
@@ -11,11 +11,12 @@ import time
 import json
 import re
 import logging
-from openai import OpenAI, RateLimitError
+import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from typing import Dict, List
 import threading
-import io
 from docx import Document
+import io
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(
@@ -32,11 +33,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 try:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+    # Configura le API di Google Gemini
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     DFSEO_LOGIN = st.secrets["DFSEO_LOGIN"]
     DFSEO_PASS = st.secrets["DFSEO_PASS"]
 except KeyError as e:
-    st.error(f"⚠️ Manca una credenziale nei Secrets di Streamlit: {e}. L'app non può funzionare.")
+    st.error(f"⚠️ Manca una credenziale nei Secrets di Streamlit: {e}. Controlla GEMINI_API_KEY, DFSEO_LOGIN, DFSEO_PASS.")
+    st.stop()
+except Exception as e:
+    st.error(f"Errore di configurazione API Gemini: {e}")
     st.stop()
 
 # CSS e Session State
@@ -51,16 +56,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if 'data' not in st.session_state:
-    st.session_state.data = {
-        'trustpilot': [], 'google': [], 'tripadvisor': [],
-        'seo_analysis': None
-    }
+    st.session_state.data = {'trustpilot': [], 'google': [], 'tripadvisor': [], 'seo_analysis': None}
 if 'flags' not in st.session_state:
     st.session_state.flags = {'data_imported': False, 'analysis_done': False}
 
 # ============================================================================
 # FUNZIONI API REALI E HELPER
 # ============================================================================
+
 def safe_api_call_with_progress(api_function, *args, **kwargs):
     progress_bar = st.progress(0, text=f"Inizializzazione chiamata a {api_function.__name__}...")
     result, error = None, None
@@ -130,33 +133,44 @@ def fetch_google_reviews(place_id, limit):
 
 def fetch_tripadvisor_reviews(ta_url, limit):
     match = re.search(r"-g(\d+)-d(\d+)-", ta_url)
-    if not match: raise ValueError("URL TripAdvisor non valido o in formato non supportato.")
+    if not match: raise ValueError("URL TripAdvisor non valido o in formato non supportato. Deve contenere i codici '-g' e '-d'.")
     location_id, entity_id = int(match.group(1)), match.group(2)
-    payload = [{"location_id": location_id, "entity_id": entity_id, "limit": limit, "language": "it"}]
+    payload = [{"location_id": location_id, "entity_id": entity_id, "limit": limit}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
 def analyze_reviews_for_seo(reviews: List[Dict]):
-    with st.spinner("Esecuzione analisi SEO e generazione FAQ con AI..."):
+    with st.spinner("Esecuzione analisi SEO e generazione FAQ con Gemini..."):
         all_texts = [r.get('review_text', '') for r in reviews if r.get('review_text')]
         if len(all_texts) < 3: return {'error': 'Dati insufficienti'}
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        
+        model = genai.GenerativeModel('gemini-1.5-flash')
         sample_reviews_text = "\n---\n".join([r[:300] for r in all_texts[:20]])
-        prompt = f"""Sei un esperto SEO. Analizza queste recensioni per 'Boscolo Viaggi'.
-        RECENSIONI: {sample_reviews_text}
+        
+        prompt = f"""Sei un esperto SEO e Content Strategist. Analizza queste recensioni reali per 'Boscolo Viaggi'.
+        RECENSIONI (ESTRATTI): {sample_reviews_text}
         TASK:
         1. Estrai i 5 temi più importanti.
         2. Genera 5 proposte di FAQ basate sui temi.
         3. Identifica 3 opportunità di contenuto SEO.
-        Rispondi in JSON con le chiavi "top_themes", "faq_proposals", "content_opportunities".
+        Fornisci la risposta in formato JSON valido, senza testo introduttivo o conclusivo, con le chiavi "top_themes", "faq_proposals", "content_opportunities".
         """
-        completion = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Sei un assistente SEO che fornisce output JSON."}, {"role": "user", "content": prompt}], response_format={"type": "json_object"})
-        try: return json.loads(completion.choices[0].message.content)
-        except (json.JSONDecodeError, IndexError): return {"error": "Analisi AI fallita."}
+        
+        try:
+            response = model.generate_content(prompt)
+            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            return json.loads(cleaned_response)
+        except google_exceptions.ResourceExhausted as e:
+            logger.error(f"Errore Rate Limit Gemini: {e}")
+            raise Exception("ERRORE GEMINI: Hai superato i limiti di utilizzo (Rate Limit). Controlla il tuo account Google AI Studio.")
+        except Exception as e:
+            logger.error(f"Errore durante l'analisi con Gemini: {e}")
+            raise Exception(f"Analisi AI con Gemini fallita: {e}")
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE
 # ============================================================================
+
 st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3 = st.tabs(["🌍 Import Dati", "📊 Dashboard Analisi", "📥 Export"])
 
@@ -166,7 +180,7 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1.expander("🌟 Trustpilot", expanded=True):
         tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscolo.com", key="tp_url_input")
-        tp_limit = st.slider("Max Recensioni TP", 20, 200, 20, key="tp_slider", help="Nota: l'API potrebbe restituire solo la prima pagina (circa 20 recensioni).")
+        tp_limit = st.slider("Max Recensioni TP", 20, 100, 20, key="tp_slider", help="Nota: l'API potrebbe restituire solo la prima pagina (circa 20 recensioni) per task.")
         if st.button("Importa da Trustpilot", use_container_width=True):
             try:
                 reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
@@ -224,33 +238,37 @@ with tab2:
                 all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google'] + st.session_state.data['tripadvisor']
                 if len(all_reviews) > 0:
                     try:
-                        with st.spinner("Analisi AI in corso... Questo potrebbe richiedere un minuto."):
-                            st.session_state.data['seo_analysis'] = analyze_reviews_for_seo(all_reviews)
+                        st.session_state.data['seo_analysis'] = analyze_reviews_for_seo(all_reviews)
                         st.session_state.flags['analysis_done'] = True
                         st.success("Analisi completata!"); st.balloons(); time.sleep(1); st.rerun()
-                    except RateLimitError:
-                        st.error("🚨 ERRORE OPENAI: Hai superato i limiti di utilizzo o esaurito il credito. Controlla il tuo account OpenAI e aggiungi un metodo di pagamento se necessario.")
                     except Exception as e:
-                        st.error(f"Si è verificato un errore imprevisto durante l'analisi: {e}")
+                        st.error(f"Si è verificato un errore durante l'analisi: {e}")
         
         if st.session_state.flags['analysis_done']:
             st.markdown("---")
             seo_results = st.session_state.data.get('seo_analysis')
             if seo_results and 'error' not in seo_results:
-                st.subheader("📈 Risultati Analisi SEO & Contenuti")
+                st.subheader("📈 Risultati Analisi SEO & Contenuti (generati da Gemini)")
+                
                 with st.expander("❓ **Proposte di FAQ Generate con AI**", expanded=True):
                     faqs = seo_results.get('faq_proposals', [])
-                    for i, faq in enumerate(faqs, 1):
-                        st.markdown(f"**Domanda {i}:** {faq['question']}")
-                        st.info(f"**Risposta Suggerita:** {faq['suggested_answer']}")
+                    if faqs:
+                        for i, faq in enumerate(faqs, 1):
+                            st.markdown(f"**Domanda {i}:** {faq['question']}")
+                            st.info(f"**Risposta Suggerita:** {faq['suggested_answer']}")
+                            st.markdown("---")
+                
                 with st.expander("💡 **Opportunità di Contenuto SEO**"):
                     opps = seo_results.get('content_opportunities', [])
-                    for idea in opps:
-                        st.success(f"**{idea['content_type']} sul tema '{idea['topic']}'** (Valore SEO: {idea['seo_value']})")
+                    if opps:
+                        for idea in opps:
+                            st.success(f"**{idea['content_type']} sul tema '{idea['topic']}'** (Valore SEO: {idea['seo_value']})")
+                
                 with st.expander("🔥 **Temi Principali Estratti**"):
                     themes = seo_results.get('top_themes', [])
-                    for theme in themes:
-                        st.markdown(f"**{theme['theme'].title()}**: *{theme['description']}*")
+                    if themes:
+                        for theme in themes:
+                            st.markdown(f"**{theme['theme'].title()}**: *{theme['description']}*")
             elif seo_results:
                 st.error(f"Errore durante l'analisi SEO: {seo_results['error']}")
 
@@ -260,12 +278,17 @@ with tab3:
         st.info("Importa dei dati per abilitare l'export.")
     else:
         st.subheader("Esporta i tuoi dati e risultati")
+        
+        # Esporta CSV
         all_reviews = st.session_state.data['trustpilot'] + st.session_state.data['google'] + st.session_state.data['tripadvisor']
         if all_reviews:
             df = pd.DataFrame(all_reviews)
-            csv = df.to_csv(index=False).encode('utf-8')
+            # Semplifica il dataframe per il CSV
+            export_df = df[['rating', 'review_text']].copy()
+            csv = export_df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Scarica tutte le recensioni (CSV)", data=csv, file_name="reviews_export.csv", mime="text/csv", use_container_width=True)
         
+        # Esporta Report Testuale
         seo_results = st.session_state.data.get('seo_analysis')
         if st.session_state.flags['analysis_done'] and seo_results and 'error' not in seo_results:
             report_text = f"Report Analisi SEO per Boscolo Viaggi - {datetime.now().strftime('%Y-%m-%d')}\n\n"
@@ -275,4 +298,5 @@ with tab3:
             report_text += "\n=== FAQ SUGGERITE ===\n"
             for faq in seo_results.get('faq_proposals', []):
                 report_text += f"D: {faq['question']}\nR: {faq['suggested_answer']}\n\n"
+            
             st.download_button("📄 Scarica Report Analisi (TXT)", data=report_text.encode('utf-8'), file_name="seo_report.txt", mime="text/plain", use_container_width=True)
