@@ -1,5 +1,4 @@
 streamlit
-pandas
 requests
-numpy
-huggingface_hub
+beautifulsoup4
+pandas
