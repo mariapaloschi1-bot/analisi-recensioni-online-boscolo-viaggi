@@ -224,4 +224,164 @@ def fetch_google_extended_reviews(name, location, limit):
     st.warning("MODALITÀ SIMULAZIONE: Le funzioni API non sono attive in questa versione.")
     reviews = [{'rating': random.randint(1, 5), 'review_text': f'Recensione estesa simulata {i+1}', 'review_source': random.choice(['Yelp', 'Booking.com'])} for i in range(limit)]
     sources_breakdown = {}
-    for r
+    for r in reviews:
+        source = r['review_source']
+        if source not in sources_breakdown:
+            sources_breakdown[source] = []
+        sources_breakdown[source].append(r)
+    return {'total_count': limit, 'all_reviews': reviews, 'sources_breakdown': sources_breakdown}
+
+def fetch_reddit_discussions(urls, subreddits, limit):
+    st.warning("MODALITÀ SIMULAZIONE: Le funzioni API non sono attive in questa versione.")
+    return [{'title': f'Discussione simulata {i+1}', 'subreddit': 'travel', 'author': f'user{i}'} for i in range(min(limit, 5))]
+
+
+# ============================================================================
+# INTERFACCIA PRINCIPALE
+# ============================================================================
+st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.info("Dashboard di analisi recensioni e keywords per Boscolo Viaggi.")
+    st.markdown("---")
+    st.markdown("### 🔧 Enterprise Features Status")
+    for feature, available in {'Visualizzazioni': PLOTLY_AVAILABLE, 'Analisi Semantica': SENTENCE_TRANSFORMERS_AVAILABLE, 'Topic Modeling': BERTOPIC_AVAILABLE}.items():
+        status = "✅ Attiva" if available else "❌ Non disponibile"
+        st.markdown(f"**{feature}:** {status}")
+    if not ENTERPRISE_LIBS_AVAILABLE:
+        st.warning("Alcune funzionalità avanzate sono disattivate. Aggiorna `requirements.txt`.")
+
+# --- TABS PRINCIPALI ---
+tab_keys = ["Import", "Basic Analysis", "Enterprise Analysis", "Keywords", "SEO", "Visualizations", "Export"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([f"🌍 {k}" for k in tab_keys])
+
+
+# --- TAB 1: IMPORT ---
+with tab1:
+    st.markdown("### 🌍 Importa Dati da Diverse Piattaforme")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.expander("🌟 Trustpilot", expanded=True):
+            trustpilot_url = st.text_input("URL Trustpilot", value="https://it.trustpilot.com/review/boscoloviaggi.com")
+            tp_limit = st.slider("Numero Recensioni Trustpilot", 50, 2000, 250, key="tp_limit")
+            if st.button("📥 Importa da Trustpilot", use_container_width=True):
+                reviews = fetch_trustpilot_reviews(trustpilot_url, tp_limit)
+                if reviews is not None:
+                    st.session_state.reviews_data['trustpilot_reviews'] = reviews
+                    st.success(f"{len(reviews)} recensioni importate!")
+                    time.sleep(1); st.rerun()
+
+        with st.expander("✈️ TripAdvisor"):
+            tripadvisor_url = st.text_input("URL TripAdvisor")
+            ta_limit = st.slider("Numero Recensioni TripAdvisor", 50, 2000, 200, key="ta_limit")
+            if st.button("📥 Importa da TripAdvisor", use_container_width=True, disabled=not tripadvisor_url):
+                reviews = fetch_tripadvisor_reviews(tripadvisor_url, "Italy", ta_limit)
+                if reviews is not None:
+                    st.session_state.reviews_data['tripadvisor_reviews'] = reviews
+                    st.success(f"{len(reviews)} recensioni importate!")
+                    time.sleep(1); st.rerun()
+    
+    with col2:
+        with st.expander("📍 Google Reviews"):
+            google_place_id = st.text_input("Google Place ID", placeholder="Inizia con ChIJ...")
+            g_limit = st.slider("Numero Recensioni Google", 50, 2000, 200, key="g_limit")
+            if st.button("📥 Importa da Google", use_container_width=True, disabled=not google_place_id):
+                reviews = fetch_google_reviews(google_place_id, "Italy", g_limit)
+                if reviews is not None:
+                    st.session_state.reviews_data['google_reviews'] = reviews
+                    st.success(f"{len(reviews)} recensioni importate!")
+                    time.sleep(1); st.rerun()
+
+        with st.expander("🔍 Extended Reviews (Yelp, etc.)"):
+            business_name = st.text_input("Nome Business per Ricerca Estesa", value="Boscolo Viaggi")
+            ext_limit = st.slider("Numero Recensioni Estese", 50, 2000, 200, key="ext_limit")
+            if st.button("📥 Importa Recensioni Estese", use_container_width=True):
+                data = fetch_google_extended_reviews(business_name, "Italy", ext_limit)
+                if data is not None:
+                    st.session_state.reviews_data['extended_reviews'] = data
+                    st.success(f"{data['total_count']} recensioni importate!")
+                    time.sleep(1); st.rerun()
+
+    with st.expander("💬 Reddit"):
+        reddit_urls = st.text_area("URL Pagine Web da cercare su Reddit (una per riga)", placeholder="https://www.boscoloviaggi.com/...")
+        if st.button("📥 Cerca Discussioni su Reddit", use_container_width=True):
+            discussions = fetch_reddit_discussions(reddit_urls, None, 100)
+            if discussions is not None:
+                st.session_state.reviews_data['reddit_discussions'] = discussions
+                st.success(f"{len(discussions)} discussioni trovate!")
+                time.sleep(1); st.rerun()
+
+    st.markdown("---")
+    st.subheader(" Riepilogo Dati Importati")
+    # ... (UI per mostrare i dati importati, simile a quella che avevamo)
+
+
+# --- TAB 2: BASIC ANALYSIS ---
+with tab2:
+    st.header("📊 Analisi Statistica di Base")
+    # Qui puoi inserire l'analisi di base che avevamo prima, che calcola medie e totali.
+    # È un'analisi veloce che non usa AI o modelli complessi.
+    if st.button("Esegui Analisi di Base", type="primary"):
+        st.session_state.analysis_flags['basic_done'] = True
+        st.success("Analisi di base completata!")
+        # ... (Logica per mostrare i risultati di base)
+
+# --- TAB 3: ENTERPRISE ANALYSIS ---
+with tab3:
+    st.header("🚀 Analisi Enterprise Avanzata")
+    if not ENTERPRISE_LIBS_AVAILABLE:
+        st.error("Librerie Enterprise non installate. Impossibile eseguire l'analisi avanzata.")
+    else:
+        if st.button("Esegui Analisi Enterprise", type="primary"):
+             # Istanzia e avvia l'analyzer
+            analyzer = EnterpriseReviewsAnalyzer(OpenAI(api_key=st.secrets["OPENAI_API_KEY"]))
+            results = analyzer.run_enterprise_analysis(st.session_state.reviews_data)
+            st.session_state.reviews_data['enterprise_analysis'] = results
+            st.session_state.analysis_flags['enterprise_done'] = True
+            st.success("Analisi Enterprise completata!")
+            st.balloons()
+        
+        if st.session_state.analysis_flags['enterprise_done']:
+            results = st.session_state.reviews_data['enterprise_analysis']
+            st.subheader("Risultati Analisi Enterprise")
+            st.json(results) # Mostra i risultati completi in formato JSON
+
+# --- TAB 4: KEYWORDS ---
+with tab4:
+    st.header("🔑 Analisi Brand Keywords")
+    # Qui inseriamo l'interfaccia per la ricerca di keywords dal codice v2.0
+    brand_name_kw = st.text_input("Nome Brand per ricerca Keywords", value="Boscolo Viaggi")
+    if st.button("Cerca Keywords", type="primary"):
+        st.info("Funzionalità di ricerca keywords non implementata in questa versione simulata.")
+        st.session_state.analysis_flags['keywords_done'] = True
+
+# --- TAB 5: SEO ---
+with tab5:
+    st.header("📈 SEO Intelligence dalle Recensioni")
+    # Qui inseriamo la logica per l'analisi SEO
+    if st.button("Estrai Spunti SEO", type="primary"):
+        st.info("Funzionalità di analisi SEO non implementata in questa versione simulata.")
+        st.session_state.analysis_flags['seo_done'] = True
+
+
+# --- TAB 6: VISUALIZATIONS ---
+with tab6:
+    st.header("🎨 Visualizzazioni Dati")
+    if not PLOTLY_AVAILABLE:
+        st.error("Libreria Plotly non installata. Impossibile creare grafici.")
+    else:
+        st.info("Grafici verranno mostrati qui dopo aver eseguito un'analisi.")
+        # ... (Codice per generare e mostrare i grafici Plotly)
+
+
+# --- TAB 7: EXPORT ---
+with tab7:
+    st.header("📥 Esporta Dati e Report")
+    # Qui inseriamo tutta la logica di export (CSV, DOCX, JSON) dal codice v2.0
+    st.info("Le opzioni di export appariranno qui dopo aver eseguito le analisi.")
+
+
+if __name__ == "__main__":
+    logger.info("Reviews Analyzer v2.1 (Unified) avviato")
