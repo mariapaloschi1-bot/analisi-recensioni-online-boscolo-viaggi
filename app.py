@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v4.1 - Final Enterprise Edition by Maria
-Full integration of advanced API calls, Enterprise Analysis, and SEO/Keywords Intelligence.
+Reviews Analyzer v4.3 - Final Enterprise Edition by Maria
+Full integration with robust API error and status handling.
 """
 
 import streamlit as st
@@ -11,11 +11,12 @@ import time
 import json
 import re
 import numpy as np
-from datetime import datetime
 import logging
 from openai import OpenAI
-from typing import Dict, List, Optional
+from typing import Dict, List
 import threading
+from docx import Document
+import io
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(
@@ -28,22 +29,18 @@ st.set_page_config(
 # ============================================================================
 # CONFIGURAZIONE INIZIALE E CREDENZIALI
 # ============================================================================
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Caricamento sicuro delle credenziali ---
 try:
     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
     DFSEO_LOGIN = st.secrets["DFSEO_LOGIN"]
     DFSEO_PASS = st.secrets["DFSEO_PASS"]
-    CREDENTIALS_OK = True
-except (KeyError, FileNotFoundError):
-    st.error("⚠️ Credenziali API (OPENAI_API_KEY, DFSEO_LOGIN, DFSEO_PASS) non trovate! Aggiungile nei Secrets di Streamlit Cloud.")
-    CREDENTIALS_OK = False
+except KeyError as e:
+    st.error(f"⚠️ Manca una credenziale nei Secrets di Streamlit: {e}. L'app non può funzionare.")
     st.stop()
 
-# CSS personalizzato
+# CSS e Session State
 st.markdown("""
 <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
@@ -53,13 +50,8 @@ st.markdown("""
     [data-testid="stMetric"] { background-color: #1a1a1a; padding: 15px; border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
-
-# --- STATO DELL'APPLICAZIONE ---
 if 'data' not in st.session_state:
-    st.session_state.data = {
-        'trustpilot': [], 'google': [], 'tripadvisor': [],
-        'analysis_results': None, 'seo_analysis': None
-    }
+    st.session_state.data = {'trustpilot': [], 'google': [], 'tripadvisor': [], 'analysis_results': None, 'seo_analysis': None}
 if 'flags' not in st.session_state:
     st.session_state.flags = {'data_imported': False, 'analysis_done': False}
 
@@ -68,78 +60,79 @@ if 'flags' not in st.session_state:
 # ============================================================================
 
 def safe_api_call_with_progress(api_function, *args, **kwargs):
-    """Wrapper per chiamate API con barra di avanzamento e gestione errori."""
-    progress_text = f"Chiamata a {api_function.__name__} in corso..."
-    my_bar = st.progress(0, text=progress_text)
-    
-    result = None
-    error = None
-
+    progress_bar = st.progress(0, text=f"Inizializzazione chiamata a {api_function.__name__}...")
+    result, error = None, None
     def api_wrapper():
         nonlocal result, error
         try:
             result = api_function(*args, **kwargs)
         except Exception as e:
             error = e
-
     thread = threading.Thread(target=api_wrapper)
     thread.start()
-
-    # Anima la barra mentre il thread lavora
     while thread.is_alive():
-        for i in range(1, 101):
-            if not thread.is_alive():
-                break
-            my_bar.progress(i, text=f"Elaborazione in corso su DataForSEO... Attendere (può richiedere minuti)... {i}%")
-            time.sleep(1) # Attendi un secondo prima di aggiornare
-    
+        progress_bar.progress(50, text="Elaborazione in corso su DataForSEO... L'operazione può richiedere diversi minuti.")
+        time.sleep(5)
     thread.join()
-    my_bar.empty()
-
+    progress_bar.empty()
     if error:
         raise error
     return result
 
 def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
-    """Invia un task a DataForSEO e restituisce il task ID."""
     url = f"https://api.dataforseo.com/v3/{endpoint}"
     response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload)
     response.raise_for_status()
     data = response.json()
-    
     if data.get("tasks_error", 1) > 0:
-        raise Exception(f"Errore creazione task: {data['tasks'][0]['status_message']}")
+        msg = data['tasks'][0]['status_message']
+        raise Exception(f"Errore API (Creazione Task): {msg}")
     return data["tasks"][0]["id"]
 
 def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
-    """Recupera i risultati di un task da DataForSEO con polling."""
-    result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}" # Corretto endpoint
-    for _ in range(60):  # Prova per 10 minuti (60 tentativi * 10 secondi)
+    result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}"
+    for attempt in range(60): # Tenta per 10 minuti
         time.sleep(10)
+        logger.info(f"Tentativo {attempt+1}/60 per il task {task_id}")
         response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
         data = response.json()
         
-        if data.get("tasks_error", 1) > 0:
-            raise Exception(f"Errore recupero task: {data['tasks'][0]['status_message']}")
+        if data.get("tasks_error", 1) > 0 and data["tasks"][0]["status_code"] != 20100:
+             msg = data['tasks'][0]['status_message']
+             # SE L'ERRORE È "Task Handed", NON È UN ERRORE, CONTINUA AD ASPETTARE
+             if "handed" in msg.lower():
+                 logger.info(f"Task {task_id} è in stato 'Handed'. Continuo ad attendere.")
+                 continue
+             raise Exception(f"Errore API (Recupero Task): {msg}")
         
         task = data["tasks"][0]
-        if task["status_code"] == 20000: # Task completato
+        status_message = (task.get("status_message") or "").lower()
+        
+        # Se il task è completato con successo
+        if task["status_code"] == 20000:
             items = []
             if task.get("result"):
                 for page in task["result"]:
                     if page and page.get("items"):
                         items.extend(page["items"])
             return items
+        # Se il task è ancora in elaborazione, in coda, o "handed"
+        elif task["status_code"] in [20100, 40602] or "queue" in status_message or "handed" in status_message:
+             logger.info(f"Task {task_id} ancora in elaborazione (Status: {status_message}). Continuo ad attendere.")
+             continue
+        # Altrimenti, è un errore
+        else:
+            raise Exception(f"Stato task non valido: {task.get('status_code')} - {task.get('status_message')}")
+
     raise Exception("Timeout: il task ha impiegato troppo tempo per essere completato.")
 
 def fetch_trustpilot_reviews(tp_url, limit):
     domain_match = re.search(r"/review/([^/?]+)", tp_url)
-    if not domain_match:
-        raise ValueError("URL Trustpilot non valido.")
+    if not domain_match: raise ValueError("URL Trustpilot non valido.")
     domain = domain_match.group(1)
     payload = [{"domain": domain, "depth": limit, "sort_by": "recency"}]
     task_id = post_task_and_get_id("business_data/trustpilot/reviews/task_post", payload)
-    return get_task_results("business_data/trustpilot/reviews", task_id) # Corretto endpoint
+    return get_task_results("business_data/trustpilot/reviews", task_id)
 
 def fetch_google_reviews(place_id, limit):
     payload = [{"place_id": place_id, "depth": limit, "sort_by": "newest", "language_name": "Italian"}]
@@ -147,54 +140,60 @@ def fetch_google_reviews(place_id, limit):
     return get_task_results("business_data/google/reviews", task_id)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
-    payload = [{"url": ta_url, "depth": limit, "sort_by": "newest", "language": "it"}] # "url" invece di "url_path" è più robusto
+    payload = [{"url": ta_url, "depth": limit, "sort_by": "newest", "language": "it"}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
-# ... (Le altre funzioni di analisi come `analyze_reviews_for_seo` vanno qui)
+# ... (Altre funzioni di analisi come analyze_reviews_for_seo)
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE
 # ============================================================================
-
 st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
-
 tab1, tab2, tab3 = st.tabs(["🌍 Import Dati", "📊 Dashboard Analisi", "📥 Export"])
 
 with tab1:
     st.markdown("### 🌍 Importa Dati Reali dalle Piattaforme")
-    if not CREDENTIALS_OK: st.stop()
-
+    
     col1, col2 = st.columns(2)
     with col1.expander("🌟 Trustpilot", expanded=True):
         tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscolo.com", key="tp_url_input")
         tp_limit = st.slider("Max Recensioni TP", 50, 1000, 100, key="tp_slider")
         if st.button("Importa da Trustpilot", use_container_width=True):
-            reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
-            if reviews is not None:
-                st.session_state.data['trustpilot'] = reviews
-                st.session_state.flags['data_imported'] = True
-                st.success(f"{len(reviews)} recensioni REALI importate da Trustpilot!"); time.sleep(2); st.rerun()
+            try:
+                reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
+                if reviews is not None:
+                    st.session_state.data['trustpilot'] = reviews
+                    st.session_state.flags['data_imported'] = True
+                    st.success(f"{len(reviews)} recensioni REALI importate da Trustpilot!"); time.sleep(2); st.rerun()
+            except Exception as e:
+                st.error(f"Errore Trustpilot: {e}")
 
     with col2.expander("✈️ TripAdvisor", expanded=True):
         ta_url = st.text_input("URL TripAdvisor", "https://www.tripadvisor.it/Attraction_Review-g187867-d24108558-Reviews-Boscolo_Viaggi-Padua_Province_of_Padua_Veneto.html", key="ta_url_input")
         ta_limit = st.slider("Max Recensioni TA", 50, 1000, 100, key="ta_slider")
         if st.button("Importa da TripAdvisor", use_container_width=True):
-            reviews = safe_api_call_with_progress(fetch_tripadvisor_reviews, ta_url, ta_limit)
-            if reviews is not None:
-                st.session_state.data['tripadvisor'] = reviews
-                st.session_state.flags['data_imported'] = True
-                st.success(f"{len(reviews)} recensioni REALI importate da TripAdvisor!"); time.sleep(2); st.rerun()
+            try:
+                reviews = safe_api_call_with_progress(fetch_tripadvisor_reviews, ta_url, ta_limit)
+                if reviews is not None:
+                    st.session_state.data['tripadvisor'] = reviews
+                    st.session_state.flags['data_imported'] = True
+                    st.success(f"{len(reviews)} recensioni REALI importate da TripAdvisor!"); time.sleep(2); st.rerun()
+            except Exception as e:
+                st.error(f"Errore TripAdvisor: {e}")
 
     with st.expander("📍 Google Reviews"):
         g_place_id = st.text_input("Google Place ID", "ChIJ-R_d-iV-1BIRsA7DW2s-2GA", key="g_id_input", help="Questo è il Place ID per 'Boscolo Tours S.P.A.'.")
         g_limit = st.slider("Max Recensioni Google", 50, 1000, 100, key="g_slider")
         if st.button("Importa da Google", use_container_width=True):
-            reviews = safe_api_call_with_progress(fetch_google_reviews, g_place_id, g_limit)
-            if reviews is not None:
-                st.session_state.data['google'] = reviews
-                st.session_state.flags['data_imported'] = True
-                st.success(f"{len(reviews)} recensioni REALI importate da Google!"); time.sleep(2); st.rerun()
+            try:
+                reviews = safe_api_call_with_progress(fetch_google_reviews, g_place_id, g_limit)
+                if reviews is not None:
+                    st.session_state.data['google'] = reviews
+                    st.session_state.flags['data_imported'] = True
+                    st.success(f"{len(reviews)} recensioni REALI importate da Google!"); time.sleep(2); st.rerun()
+            except Exception as e:
+                st.error(f"Errore Google: {e}")
 
     # Riepilogo dati... (come prima)
     st.markdown("---")
@@ -208,15 +207,10 @@ with tab1:
             for i, platform in enumerate(active_platforms):
                 cols[i].metric(label=f"📝 {platform}", value=counts[platform])
 
-# Le altre schede (Analisi, Export) rimangono come nel codice precedente
+# ... (Le altre schede rimangono invariate per ora) ...
 with tab2:
     st.header("📊 Dashboard Analisi")
-    if not st.session_state.flags['data_imported']:
-        st.info("⬅️ Importa dati dal tab 'Import Dati' per poter eseguire un'analisi.")
-    else:
-        # ... (Qui va la logica di analisi completa che abbiamo definito prima)
-        st.info("Pronto per l'analisi. Clicca il pulsante per avviare.")
-        
+    st.info("Funzionalità di analisi in costruzione.")
 with tab3:
     st.header("📥 Export")
-    st.info("Le opzioni di export appariranno qui dopo aver eseguito le analisi.")
+    st.info("Funzionalità di export in costruzione.")
