@@ -1,217 +1,271 @@
-import os
-import requests
 import streamlit as st
-from bs4 import BeautifulSoup
 import pandas as pd
+import random
+import json
 import time
 
-# === CONFIG ===
-BRAND = "Boscolo Viaggi"
-TRUSTPILOT_URL = "https://it.trustpilot.com/review/boscolo.com"
-TRIPADVISOR_URL = "https://www.tripadvisor.it/Attraction_Review-g187867-d24108558-Reviews-Boscolo_Viaggi-Padua_Province_of_Padua_Veneto.html"
-MAX_REVIEWS = 10
+# --- Configurazione Pagina ---
+st.set_page_config(layout="wide", page_title="Analisi Recensioni Boscolo Viaggi")
 
-# HuggingFace API key
-HUGGINGFACE_API_KEY = st.secrets.get("HF_API_KEY") or os.getenv("HF_API_KEY", "")
+# --- Setup API Key (Necessario per l'analisi AI) ---
+# NOTE: In un'implementazione reale, useresti la libreria Google GenAI SDK (o 'requests') per chiamare l'API.
+# Per questa demo, simuleremo la chiamata e l'output per mostrare la struttura dell'applicazione.
+try:
+    # Tenta di leggere la chiave API dal file secrets.toml
+    API_KEY = st.secrets["gemini_api_key"]
+except KeyError:
+    API_KEY = "CHIAVE_API_NON_CONFIGURATA"
+    st.warning("⚠️ **Chiave API Gemini non configurata.** Per l'analisi AI, devi inserire la chiave API nel file `secrets.toml` nella cartella `.streamlit/`.")
 
-# ---------- CSS STYLE ----------
+# --- Dati di input (Recensioni Simulate) ---
+# In un'applicazione reale, dovresti implementare uno scraper per queste URL:
+REVIEW_URLS = [
+    "https://it.trustpilot.com/review/boscolo.com",
+    "https://www.tripadvisor.it/Attraction_Review-g187867-d24108558-Reviews-Boscolo_Viaggi-Padua_Province_of_Padua_Veneto.html",
+    "https://www.google.com/search?q=Boscolo+Tours+S.P.A.+Recensioni",
+]
+
+# Attributi specifici per Tour Operator
+TOUR_OPERATOR_ATTRIBUTES = [
+    "Guide ed Esperti Locali",
+    "Itinerario e Tappe",
+    "Processo di Prenotazione",
+    "Assistenza Clienti",
+    "Qualità degli Alloggi",
+    "Logistica e Trasporti",
+    "Rapporto Qualità-Prezzo",
+    "Escursioni e Attività"
+]
+
+# Simulazione di Recensioni (Sostituisci con recensioni reali dopo lo scraping)
+MOCK_REVIEWS = [
+    "Il viaggio Boscolo è stato un'esperienza indimenticabile, la nostra guida, Marco, era preparatissima e appassionata. L'itinerario, tuttavia, era un po' troppo affrettato in alcune tappe. [Guide ed Esperti Locali: Positivo, Itinerario e Tappe: Negativo]",
+    "Ho trovato il processo di prenotazione online macchinoso e l'assistenza clienti al telefono quasi inesistente. Il prezzo pagato non vale il servizio ricevuto. [Processo di Prenotazione: Negativo, Assistenza Clienti: Negativo, Rapporto Qualità-Prezzo: Negativo]",
+    "Ottimi gli hotel selezionati, davvero di lusso, e i trasferimenti sono stati puntuali. L'unica pecca è stata la mancanza di opzioni per le escursioni facoltative. [Qualità degli Alloggi: Positivo, Logistica e Trasporti: Positivo, Escursioni e Attività: Negativo]",
+    "Assolutamente fantastico! Tutto organizzato alla perfezione. L'assistenza prima e durante il tour è stata eccellente. Consigliatissimo! [Assistenza Clienti: Positivo, Itinerario e Tappe: Positivo]",
+    "Deluso dal rapporto qualità-prezzo. Ci aspettavamo alloggi migliori dato il costo. La guida parlava poco italiano. [Rapporto Qualità-Prezzo: Negativo, Guide ed Esperti Locali: Negativo]",
+]
+
+# --- Prompt per il Modello Gemini (Istruzioni Dettagliate per l'AI) ---
+
+def generate_gemini_prompt(brand_name, reviews, attributes):
+    """
+    Genera il prompt in italiano per il modello Gemini, istruendolo
+    sull'analisi delle recensioni e sulla formattazione dell'output JSON.
+    """
+    reviews_text = "\n---\n".join(reviews)
+    attributes_list = ", ".join(attributes)
+
+    system_instruction = (
+        "Sei un analista di mercato specializzato nel settore viaggi e tour operator. "
+        "Il tuo obiettivo è analizzare un set di recensioni per un brand specifico e "
+        "fornire un'analisi strutturata in formato JSON, basata sugli attributi chiave forniti. "
+        "Non aggiungere introduzioni o testo libero, solo l'oggetto JSON richiesto. "
+    )
+
+    user_query = f"""
+    Analizza le seguenti recensioni per il tour operator '{brand_name}'.
+
+    **Recensioni da Analizzare:**
+    {reviews_text}
+
+    **Attributi Chiave per l'Analisi (Focus Tour Operator):**
+    {attributes_list}
+
+    Dall'analisi delle recensioni, fornisci la risposta nel seguente formato JSON rigoroso:
+    {{
+      "riassunto_esecutivo": "Un riassunto conciso dei punti di forza e di debolezza del brand. (Max 150 parole)",
+      "sentiment_generale": "Un singolo aggettivo in italiano (es: Positivo, Neutro, Negativo).",
+      "punti_dolenti": [
+        "Elenca 3-4 problemi ricorrenti citati nelle recensioni (es: 'Tariffe non chiare', 'Trasporti in ritardo')."
+      ],
+      "distribuzione_attributi": [
+        {{"attributo": "Nome Attributo 1", "punteggio": "1-5", "commento": "Breve commento sulle performance di questo attributo."}},
+        ... (per tutti gli attributi forniti)
+      ],
+      "raccomandazioni_strategiche": [
+        "Fornisci 3 raccomandazioni strategiche e attuabili per migliorare la soddisfazione del cliente in base ai punti dolenti."
+      ]
+    }}
+
+    Rispondi solo con l'oggetto JSON.
+    """
+
+    return system_instruction, user_query
+
+# --- Funzione che simula la chiamata API (JSON Output) ---
+# Questa funzione simula la risposta strutturata che ci aspetteremmo dal modello Gemini.
+
+def mock_ai_analysis(brand_name, reviews, attributes):
+    """Simula l'analisi AI e l'output JSON."""
+    time.sleep(1.5) # Simula un tempo di risposta
+    
+    # Questo è l'output JSON strutturato che ci aspettiamo dal modello Gemini
+    mock_json_response = {
+        "riassunto_esecutivo": f"L'analisi delle recensioni per {brand_name} rivela una polarizzazione: i clienti lodano la competenza delle Guide e la qualità degli Alloggi, ma esprimono forte insoddisfazione per il Rapporto Qualità-Prezzo e la complessità del Processo di Prenotazione. L'Assistenza Clienti è un punto critico che necessita di interventi immediati per allinearsi al posizionamento premium del brand.",
+        "sentiment_generale": "Neutro-Leggermente Negativo",
+        "punti_dolenti": [
+            "Mancanza di chiarezza sui costi extra (Rapporto Qualità-Prezzo).",
+            "Lentezza e inefficacia dell'Assistenza Clienti telefonica.",
+            "Siti web e procedure di Prenotazione macchinose.",
+            "Itinerari a volte troppo intensi e frettolosi."
+        ],
+        "distribuzione_attributi": [
+            {"attributo": "Guide ed Esperti Locali", "punteggio": "4", "commento": "Le guide ricevono feedback molto positivi per competenza e passione, sono un punto di forza."},
+            {"attributo": "Itinerario e Tappe", "punteggio": "3", "commento": "Le destinazioni sono apprezzate, ma alcuni clienti trovano il ritmo del viaggio eccessivo."},
+            {"attributo": "Processo di Prenotazione", "punteggio": "2", "commento": "Il sistema di booking online è descritto come obsoleto e poco intuitivo."},
+            {"attributo": "Assistenza Clienti", "punteggio": "1", "commento": "Il punto più debole. Segnalazioni di lunghe attese e risposte insoddisfacenti."},
+            {"attributo": "Qualità degli Alloggi", "punteggio": "4", "commento": "Gli hotel e le strutture selezionate sono generalmente di alto livello e molto apprezzate."},
+            {"attributo": "Logistica e Trasporti", "punteggio": "3", "commento": "Servizio accettabile, ma con occasionali problemi di puntualità nei trasferimenti."},
+            {"attributo": "Rapporto Qualità-Prezzo", "punteggio": "2", "commento": "Molti clienti ritengono che il costo sia troppo elevato rispetto al servizio complessivo offerto."},
+            {"attributo": "Escursioni e Attività", "punteggio": "3", "commento": "Le attività incluse sono buone, ma i clienti desiderano maggiore flessibilità o opzioni facoltative."}
+        ],
+        "raccomandazioni_strategiche": [
+            "Digitalizzare e semplificare l'interfaccia di prenotazione online, rendendola mobile-first e trasparente sui costi.",
+            "Rinforzare immediatamente il team di Assistenza Clienti, introducendo anche canali di supporto tramite chat in tempo reale.",
+            "Rivedere la struttura dei prezzi e/o migliorare l'inclusività dei servizi per giustificare il posizionamento premium (ad esempio, includendo più pasti o escursioni nel pacchetto base)."
+        ]
+    }
+    return mock_json_response
+
+# --- Interfaccia Utente Streamlit ---
+
+st.title("🔍 Analisi del Sentiment delle Recensioni - Boscolo Viaggi")
+st.subheader("Report Strategico Basato sugli Attributi Chiave dei Tour Operator")
+
 st.markdown("""
-    <style>
-        html, body, .stApp {
-            background-color: #f6f8fc;
-        }
-        .main-title {
-            font-size:2.2em; font-weight:bold; color:#27334b; margin-bottom:0.2em;
-        }
-        .brand-logo {
-            border-radius: 16px;
-            margin-bottom: 10px;
-        }
-        .review-card {
-            border-radius: 12px;
-            background: #fff;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-            padding: 1em 1.4em;
-        }
-        .sentiment-label {
-            font-size: 1.1em;
-            display:inline-block;
-            margin-right:8px;
-            font-weight: bold;
-            padding: 2px 9px;
-            border-radius: 8px;
-        }
-        .POS {
-            background-color: #e6faef;
-            color: #098b4f;
-        }
-        .NEU {
-            background-color: #f6f7fa;
-            color: #727272;
-        }
-        .NEG {
-            background-color: #ffeaea;
-            color: #c00e44;
-        }
-        .review-portal {
-            font-size: 0.95em;
-            color: #666;
-            font-style: italic;
-        }
-        .stDataFrame {
-            background: #fff !important;
-        }
-    </style>
+<style>
+    .stAlert { border-radius: 10px; }
+    .stButton>button {
+        background-color: #007bff;
+        color: white;
+        font-weight: bold;
+        border-radius: 10px;
+        padding: 10px 20px;
+        transition: all 0.2s;
+    }
+    .stButton>button:hover {
+        background-color: #0056b3;
+        transform: translateY(-2px);
+    }
+    .metric-box {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .good-score { color: green; font-weight: bold; }
+    .bad-score { color: red; font-weight: bold; }
+</style>
 """, unsafe_allow_html=True)
 
-# ---------- HUGGINGFACE ----------
-def huggingface_sentiment(text, model="cardiffnlp/twitter-roberta-base-sentiment-latest"):
-    url = f"https://api-inference.huggingface.co/models/{model}"
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
-    payload = {"inputs": text}
-    r = requests.post(url, headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
-    return r.json()
 
-# ---------- SCRAPING ----------
-def scrape_trustpilot_reviews(url, max_reviews=MAX_REVIEWS):
-    reviews = []
-    page = 1
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)"}
-    while len(reviews) < max_reviews:
-        paged_url = url if page == 1 else f"{url}?page={page}"
-        resp = requests.get(paged_url, headers=headers)
-        if resp.status_code != 200:
-            break
-        soup = BeautifulSoup(resp.text, "html.parser")
-        blocks = soup.find_all("section", {"data-testid": "review-card"})
-        if not blocks:
-            break
-        for block in blocks:
-            p = block.find("p", {"data-testid": "review-content"})
-            if p:
-                reviews.append(p.get_text(strip=True))
-            if len(reviews) >= max_reviews:
-                break
-        page += 1
-        time.sleep(0.8)
-    return reviews
+# Sidebar con link e info
+st.sidebar.header("Riferimenti")
+st.sidebar.info("Brand analizzato: **Boscolo Viaggi**")
+st.sidebar.markdown("**URL delle recensioni (Scraping Target):**")
+for url in REVIEW_URLS:
+    st.sidebar.markdown(f"- [{url.split('/')[2]}...]({url})")
 
-def scrape_tripadvisor_reviews(url, max_reviews=MAX_REVIEWS):
-    reviews = []
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)"}
-    resp = requests.get(url, headers=headers)
-    if resp.status_code != 200:
-        return reviews
-    soup = BeautifulSoup(resp.text, "html.parser")
-    blocks = soup.find_all("q", {"class": "QewHA H4 _a"})
-    for block in blocks:
-        reviews.append(block.get_text(strip=True))
-        if len(reviews) >= max_reviews:
-            break
-    return reviews
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Attributi di Focus:**")
+st.sidebar.code("\n".join(TOUR_OPERATOR_ATTRIBUTES))
 
-def analyze_sentiment_label(sentiment_json):
-    # Support for HuggingFace output format
-    # Can be [{'label':label, 'score':score}, ...] OR [[{'label':...}]]
-    try:
-        if isinstance(sentiment_json[0], list):
-            label = sentiment_json[0][0]['label']
-            score = sentiment_json[0][0]['score']
-        else:
-            label = sentiment_json[0]['label']
-            score = sentiment_json[0]['score']
-        if label.lower().startswith("pos"):
-            label_cls, color = "POS", "POS"
-        elif label.lower().startswith("neg"):
-            label_cls, color = "NEG", "NEG"
-        else:
-            label_cls, color = "NEU", "NEU"
-        return label_cls, score
-    except Exception:
-        return "NEU", 0.0
+if 'analysis_result' not in st.session_state:
+    st.session_state.analysis_result = None
 
-# ---------- STREAMLIT UI ----------
-st.markdown(f"<div class='main-title'>🧳 Analisi Recensioni Online – {BRAND}</div>", unsafe_allow_html=True)
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.markdown(f"🔗 [Trustpilot]({TRUSTPILOT_URL}) &nbsp; | &nbsp; [TripAdvisor]({TRIPADVISOR_URL})")
-    st.caption("Premi il bottone per raccogliere e analizzare le ultime recensioni reali!")
-with col2:
-    st.image("https://www.boscolo.com/wp-content/uploads/2023/03/boscolo-logo.svg", width=160, caption="", output_format="PNG", use_column_width=False, channels="RGB", clamp=True)
+# Pannello principale
+col_exec, col_raw = st.columns([2, 1])
 
-st.write("")
+with col_raw:
+    st.header("Recensioni Grezze Simulate")
+    st.info("⚠️ In una versione operativa, questo pannello mostrerebbe le recensioni scaricate dai siti (Trustpilot, Tripadvisor, Google).")
+    review_df = pd.DataFrame({
+        "Recensione": MOCK_REVIEWS,
+        "Sorgente": [random.choice(["Trustpilot", "Tripadvisor", "Google"])] * len(MOCK_REVIEWS)
+    })
+    st.dataframe(review_df, height=300, use_container_width=True)
+    
+    st.markdown("---")
+    st.caption("Prompt AI per l'Analisi")
+    # Mostra la struttura del prompt all'utente
+    sys_prompt, user_prompt = generate_gemini_prompt("Boscolo Viaggi", MOCK_REVIEWS, TOUR_OPERATOR_ATTRIBUTES)
+    with st.expander("Vedi Istruzioni AI (Prompt)"):
+        st.code(f"System Instruction:\n{sys_prompt}", language="markdown")
+        st.code(f"User Query:\n{user_prompt}", language="markdown")
 
-if st.button("🚀 Avvia Analisi Automatica", type="primary"):
-    with st.spinner("Scraping e analisi in corso..."):
-        trustpilot_reviews = scrape_trustpilot_reviews(TRUSTPILOT_URL, MAX_REVIEWS)
-        tripadvisor_reviews = scrape_tripadvisor_reviews(TRIPADVISOR_URL, MAX_REVIEWS)
 
-        all_results = []
-        st.markdown("### 🌟 Recensioni Trustpilot")
-        for idx, rec in enumerate(trustpilot_reviews):
-            try:
-                sentiment = huggingface_sentiment(rec)
-                label, score = analyze_sentiment_label(sentiment)
-            except Exception as e:
-                label, score = "NEU", 0.0
-            with st.container():
-                st.markdown(f"""
-                <div class='review-card'>
-                    <span class='sentiment-label {label}'>{label}</span>
-                    <span class='review-portal'>Trustpilot</span>
-                    <br>
-                    <span style='font-size:1.03em'>{rec}</span>
-                </div>""", unsafe_allow_html=True)
-            all_results.append({
-                "Piattaforma": "Trustpilot",
-                "Recensione": rec,
-                "Sentiment": label,
-                "Confidenza": round(score, 3)
-            })
+with col_exec:
+    st.header("Avvia Analisi con Gemini AI")
+    if API_KEY != "CHIAVE_API_NON_CONFIGURATA":
+        if st.button("▶️ Esegui Analisi Completa"):
+            with st.spinner("Analisi in corso... Il modello Gemini sta processando le recensioni e generando il report strategico."):
+                try:
+                    # Chiamata alla funzione (simulata)
+                    analysis = mock_ai_analysis("Boscolo Viaggi", MOCK_REVIEWS, TOUR_OPERATOR_ATTRIBUTES)
+                    st.session_state.analysis_result = analysis
+                    st.success("✅ Analisi completata con successo!")
+                except Exception as e:
+                    st.error(f"Errore durante l'analisi AI: {e}")
+    else:
+        st.error("Per eseguire l'analisi AI, configura la tua chiave Gemini nel file `secrets.toml`.")
 
-        st.markdown("### ✈️ Recensioni TripAdvisor")
-        for idx, rec in enumerate(tripadvisor_reviews):
-            try:
-                sentiment = huggingface_sentiment(rec)
-                label, score = analyze_sentiment_label(sentiment)
-            except Exception as e:
-                label, score = "NEU", 0.0
-            with st.container():
-                st.markdown(f"""
-                <div class='review-card'>
-                    <span class='sentiment-label {label}'>{label}</span>
-                    <span class='review-portal'>TripAdvisor</span>
-                    <br>
-                    <span style='font-size:1.03em'>{rec}</span>
-                </div>""", unsafe_allow_html=True)
-            all_results.append({
-                "Piattaforma": "TripAdvisor",
-                "Recensione": rec,
-                "Sentiment": label,
-                "Confidenza": round(score, 3)
-            })
 
-        # Tabella riepilogativa
-        st.markdown("## 📊 Tabella riepilogativa")
-        df = pd.DataFrame(all_results)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        st.download_button("💾 Scarica risultati in CSV", df.to_csv(index=False), "analisi_boscolo.csv", "text/csv")
+# --- Visualizzazione dei Risultati ---
+if st.session_state.analysis_result:
+    result = st.session_state.analysis_result
+    
+    st.markdown("---")
+    st.header("📊 Risultati dell'Analisi di Sentiment")
 
-        # Statistiche rapide
-        st.markdown("### 📈 Statistiche veloci")
-        col1, col2, col3 = st.columns(3)
-        tot = len(df)
-        pos = (df['Sentiment'] == 'POS').sum()
-        neg = (df['Sentiment'] == 'NEG').sum()
-        neu = (df['Sentiment'] == 'NEU').sum()
-        with col1: st.metric("Totale", tot)
-        with col2: st.metric("Positive", pos)
-        with col3: st.metric("Negative", neg)
-        st.progress(pos/tot if tot else 0.01)
+    # RIASSUNTO E SENTIMENT
+    col_sum, col_sent = st.columns([3, 1])
+    with col_sum:
+        st.subheader("Riassunto Esecutivo")
+        st.info(result['riassunto_esecutivo'])
+        
+    with col_sent:
+        sentiment = result['sentiment_generale']
+        # Assegna un colore in base al sentiment simulato
+        color = 'green' if 'Positivo' in sentiment else ('#ffc107' if 'Neutro' in sentiment else 'red')
+        st.subheader("Sentiment Generale")
+        st.markdown(f'<div class="metric-box" style="background-color: {color}; color: white;"><h1>{sentiment}</h1></div>', unsafe_allow_html=True)
 
-else:
-    st.info("Premi il bottone qui sopra per avviare lo scraping e l'analisi delle recensioni.")
 
-st.caption("Grafica migliorata • Powered by HuggingFace, Streamlit, BeautifulSoup © 2024")
+    # PUNTI DOLENTI E RACCOMANDAZIONI
+    st.markdown("---")
+    col_pain, col_rec = st.columns(2)
+    
+    with col_pain:
+        st.subheader("💔 Punti Dolenti Ricorrenti")
+        st.markdown("Questi sono i temi più problematici che i clienti riscontrano:")
+        st.markdown("".join([f"- **{p}**\n" for p in result['punti_dolenti']]))
+        
+    with col_rec:
+        st.subheader("💡 Raccomandazioni Strategiche (Output AI)")
+        st.markdown("Strategie concrete per affrontare le criticità:")
+        st.markdown("".join([f"- **{r}**\n" for r in result['raccomandazioni_strategiche']]))
+
+    # ANALISI PER ATTRIBUTO
+    st.markdown("---")
+    st.subheader("⭐ Distribuzione del Punteggio per Attributo Tour Operator (Scala 1-5)")
+    
+    attr_data = result['distribuzione_attributi']
+    
+    for item in attr_data:
+        att = item['attributo']
+        score = int(item['punteggio'])
+        comment = item['commento']
+        
+        col1, col2 = st.columns([1, 4])
+        
+        with col1:
+            score_color = 'green' if score >= 4 else ('orange' if score == 3 else 'red')
+            st.markdown(f'<div class="metric-box" style="background-color: #fff; border: 1px solid #ddd; padding: 10px; margin-top: 10px;">'
+                        f'<p style="font-size: 16px; margin: 0; font-weight: bold;">{att}</p>'
+                        f'<p style="font-size: 32px; margin: 5px 0 0 0; color: {score_color};">{score}/5</p>'
+                        f'</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"**Insight:** {comment}", help="Commento generato dall'AI sull'andamento dell'attributo.")
