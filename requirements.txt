@@ -1,4 +1,1 @@
-streamlit
-requests
-beautifulsoup4
-pandas
+pip install -r requirements.txt
