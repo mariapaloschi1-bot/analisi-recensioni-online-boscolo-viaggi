@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v4.5 - Final Enterprise Edition by Maria
-Corrected API payloads for Google and TripAdvisor based on official documentation.
+Reviews Analyzer v4.7 - Final Enterprise Edition by Maria
+API Payloads rewritten based on current official DataForSEO documentation.
 """
 
 import streamlit as st
@@ -114,19 +114,19 @@ def fetch_trustpilot_reviews(tp_url, limit):
     domain_match = re.search(r"/review/([^/?]+)", tp_url)
     if not domain_match: raise ValueError("URL Trustpilot non valido.")
     domain = domain_match.group(1)
-    payload = [{"domain": domain, "depth": limit}]
+    payload = [{"domain": domain, "limit": limit}]
     task_id = post_task_and_get_id("business_data/trustpilot/reviews/task_post", payload)
     return get_task_results("business_data/trustpilot/reviews", task_id)
 
 def fetch_google_reviews(place_id, limit):
-    # CORREZIONE: Rimosso 'language_name' come da documentazione per il task_post
-    payload = [{"place_id": place_id, "depth": limit}]
+    # CORREZIONE FINALE BASATA SU DOCUMENTAZIONE UFFICIALE
+    payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
     task_id = post_task_and_get_id("business_data/google/reviews/task_post", payload)
     return get_task_results("business_data/google/reviews", task_id)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
-    # CORREZIONE: Il payload corretto secondo la documentazione usa 'url'
-    payload = [{"url": ta_url, "depth": limit}]
+    # CORREZIONE FINALE BASATA SU DOCUMENTAZIONE UFFICIALE
+    payload = [{"url": ta_url, "limit": limit, "language": "it"}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
