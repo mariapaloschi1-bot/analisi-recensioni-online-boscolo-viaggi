@@ -3,12 +3,4 @@ pandas
 requests
 numpy
 python-docx
-openai
-plotly
-scikit-learn
-networkx
-sentence-transformers
-bertopic
-umap-learn
-hdbscan
-google-generativeai 
+google-generativeai
