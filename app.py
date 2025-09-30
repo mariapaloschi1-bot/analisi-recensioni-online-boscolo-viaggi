@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v4.7 - Final Enterprise Edition by Maria
-API Payloads rewritten based on current official DataForSEO documentation.
+Reviews Analyzer v5.0 - Final Enterprise Edition by Maria
+Logic rewritten to be a 1:1 match with the original working script provided.
 """
 
 import streamlit as st
@@ -10,10 +10,9 @@ import requests
 import time
 import json
 import re
-import numpy as np
 import logging
 from openai import OpenAI
-from typing import Dict, List
+from typing import Dict, List, Optional
 import threading
 
 # --- CONFIGURAZIONE PAGINA ---
@@ -54,8 +53,9 @@ if 'flags' not in st.session_state:
     st.session_state.flags = {'data_imported': False}
 
 # ============================================================================
-# FUNZIONI API REALI E HELPER
+# FUNZIONI API REALI E HELPER (RISCRITTE FEDELMENTE ALL'ORIGINALE)
 # ============================================================================
+
 def safe_api_call_with_progress(api_function, *args, **kwargs):
     progress_bar = st.progress(0, text=f"Inizializzazione chiamata a {api_function.__name__}...")
     result, error = None, None
@@ -67,9 +67,14 @@ def safe_api_call_with_progress(api_function, *args, **kwargs):
             error = e
     thread = threading.Thread(target=api_wrapper)
     thread.start()
+    
+    # Animazione realistica della barra di attesa
     while thread.is_alive():
-        progress_bar.progress(50, text="Elaborazione in corso su DataForSEO... L'operazione può richiedere diversi minuti.")
-        time.sleep(5)
+        for i in range(1, 101):
+            if not thread.is_alive(): break
+            progress_bar.progress(i, text=f"Elaborazione in corso su DataForSEO... L'operazione può richiedere diversi minuti... ({i}%)")
+            time.sleep(1) # Simula un progresso costante
+    
     thread.join()
     progress_bar.empty()
     if error: raise error
@@ -78,24 +83,28 @@ def safe_api_call_with_progress(api_function, *args, **kwargs):
 def post_task_and_get_id(endpoint: str, payload: List[Dict]) -> str:
     url = f"https://api.dataforseo.com/v3/{endpoint}"
     response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload)
-    response.raise_for_status()
     data = response.json()
-    if data.get("tasks_error", 1) > 0:
-        msg = data['tasks'][0]['status_message']
+    if data.get("tasks_error", 1) > 0 or data['tasks'][0]['status_code'] not in [20000, 20100]:
+        msg = data['tasks'][0].get('status_message', 'Errore sconosciuto')
         raise Exception(f"Errore API (Creazione Task): {msg}")
     return data["tasks"][0]["id"]
 
 def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
     result_url = f"https://api.dataforseo.com/v3/{endpoint}/task_get/{task_id}"
-    for attempt in range(60):
+    for attempt in range(60): # Tenta per 10 minuti
         time.sleep(10)
         logger.info(f"Tentativo {attempt+1}/60 per il task {task_id}")
         response = requests.get(result_url, auth=(DFSEO_LOGIN, DFSEO_PASS))
-        response.raise_for_status()
         data = response.json()
+        
+        if "tasks" not in data or not data["tasks"]:
+            logger.warning(f"Risposta API inattesa per task {task_id}, ritento...")
+            continue
+            
         task = data["tasks"][0]
         status_code = task.get("status_code")
         status_message = (task.get("status_message") or "").lower()
+        
         if status_code == 20000:
             logger.info(f"Task {task_id} completato.")
             items = []
@@ -108,26 +117,27 @@ def get_task_results(endpoint: str, task_id: str) -> List[Dict]:
              continue
         else:
             raise Exception(f"Stato task non valido: {status_code} - {task.get('status_message')}")
-    raise Exception("Timeout: il task ha impiegato troppo tempo.")
+    raise Exception("Timeout: il task ha impiegato troppo tempo per essere completato.")
 
 def fetch_trustpilot_reviews(tp_url, limit):
     domain_match = re.search(r"/review/([^/?]+)", tp_url)
     if not domain_match: raise ValueError("URL Trustpilot non valido.")
     domain = domain_match.group(1)
-    payload = [{"domain": domain, "limit": limit}]
+    # Payload ESATTO dal codice originale
+    payload = [{"domain": domain, "depth": limit, "sort_by": "recency"}]
     task_id = post_task_and_get_id("business_data/trustpilot/reviews/task_post", payload)
     return get_task_results("business_data/trustpilot/reviews", task_id)
 
 def fetch_google_reviews(place_id, limit):
-    # VERSIONE CORRETTA SENZA 'location_name'
-    payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
+    # Payload ESATTO dal codice originale
+    payload = [{"place_id": place_id, "depth": limit, "sort_by": "newest", "language_name": "Italian", "location_name": "Italy"}]
     task_id = post_task_and_get_id("business_data/google/reviews/task_post", payload)
     return get_task_results("business_data/google/reviews", task_id)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
-    # VERSIONE CORRETTA CON 'url'
-    clean_url = ta_url.split('?')[0] # Rimuove parametri extra
-    payload = [{"url": clean_url, "limit": limit}]
+    # Payload ESATTO dal codice originale
+    clean_url = ta_url.split('?')[0]
+    payload = [{"url_path": clean_url, "depth": limit, "language_name": "Italian", "location_name": "Italy"}]
     task_id = post_task_and_get_id("business_data/tripadvisor/reviews/task_post", payload)
     return get_task_results("business_data/tripadvisor/reviews", task_id)
 
@@ -192,10 +202,9 @@ with tab1:
             for i, platform in enumerate(active_platforms):
                 cols[i].metric(label=f"📝 {platform}", value=counts[platform])
 
-# Le altre schede rimangono invariate per ora
 with tab2:
     st.header("📊 Dashboard Analisi")
-    st.info("Funzionalità di analisi in costruzione.")
+    st.info("In costruzione...")
 with tab3:
     st.header("📥 Export")
-    st.info("Funzionalità di export in costruzione.")
+    st.info("In costruzione...")
