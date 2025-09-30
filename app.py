@@ -20,16 +20,30 @@ st.set_page_config(page_title="Boscolo Viaggi Reviews", page_icon="✈️", layo
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
+# Le credenziali sono caricate da st.secrets.
+# Per far funzionare questo codice, dovrai avere un file .streamlit/secrets.toml
+# con le seguenti chiavi:
+# [HUGGINGFACE_TOKEN]
+# [DFSEO_LOGIN]
+# [DFSEO_PASS]
 try:
     HF_TOKEN = st.secrets["HUGGINGFACE_TOKEN"]
     DFSEO_LOGIN = st.secrets["DFSEO_LOGIN"]
     DFSEO_PASS = st.secrets["DFSEO_PASS"]
 except KeyError as e:
-    st.error(f"⚠️ Manca una credenziale nei Secrets: {e}.")
+    st.error(f"⚠️ Manca una credenziale nei Secrets: {e}. Assicurati di avere il file `secrets.toml` configurato.")
     st.stop()
 
 # CSS e Session State
-st.markdown("""<style>.stApp{background-color:#000;color:#FFF}.main-header{text-align:center;padding:20px;background:linear-gradient(135deg,#005691 0%,#0099FF 25%,#FFD700 75%,#8B5CF6 100%);border-radius:20px;margin-bottom:30px}.stButton>button{background-color:#0099FF;color:#FFF;border:none}section[data-testid=stSidebar]{background-color:#1A1A1A}[data-testid=stMetric]{background-color:#1a1a1a;padding:15px;border-radius:10px}</style>""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+.stApp{background-color:#000;color:#FFF}
+.main-header{text-align:center;padding:20px;background:linear-gradient(135deg,#005691 0%,#0099FF 25%,#FFD700 75%,#8B5CF6 100%);border-radius:20px;margin-bottom:30px;color:black;}
+.stButton>button{background-color:#0099FF;color:#FFF;border:none}
+section[data-testid=stSidebar]{background-color:#1A1A1A}
+[data-testid=stMetric]{background-color:#1a1a1a;padding:15px;border-radius:10px}
+</style>
+""", unsafe_allow_html=True)
 if 'data' not in st.session_state:
     st.session_state.data = {'google': [], 'tripadvisor': [], 'seo_analysis': None}
 if 'flags' not in st.session_state:
@@ -42,12 +56,20 @@ if 'flags' not in st.session_state:
 def api_live_call(api_name: str, endpoint: str, payload: List[Dict]):
     url = f"https://api.dataforseo.com/v3/{endpoint}"
     with st.spinner(f"Connessione a DataForSEO per {api_name}... (può richiedere fino a 2 minuti)"):
+        # Aggiunta di un breve ritardo per sicurezza e feedback visivo
+        time.sleep(1) 
         response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
-        if data.get("tasks_error", 0) > 0 or data['tasks'][0]['status_code'] != 20000:
-            raise Exception(f"Errore API: {data['tasks'][0].get('status_message', 'Errore sconosciuto')}")
+        
+        # Gestione degli errori standard di DataForSEO
+        if data.get("tasks_error", 0) > 0:
+            raise Exception(f"Errore API in DataForSEO: {data.get('tasks', [{}])[0].get('status_message', 'Errore sconosciuto')}")
+        
         task = data["tasks"][0]
+        if task['status_code'] != 20000:
+            raise Exception(f"Errore API: {task.get('status_message', 'Errore sconosciuto')}")
+            
         items = []
         if task.get("result"):
             for page in task["result"]:
@@ -59,41 +81,60 @@ def fetch_google_reviews(place_id, limit):
     return api_live_call("Google", "business_data/google/reviews/live", payload)
 
 def fetch_tripadvisor_reviews(ta_url, limit):
+    # DataForSEO richiede l'URL pulito
     clean_url = ta_url.split('?')[0]
     payload = [{"url": clean_url, "limit": limit}]
     return api_live_call("TripAdvisor", "business_data/tripadvisor/reviews/live", payload)
 
 def analyze_reviews_with_huggingface(reviews: List[Dict]):
     with st.spinner("Esecuzione analisi con modello open-source (potrebbe richiedere tempo)..."):
+        # Filtra e seleziona i testi delle recensioni validi
         all_texts = [r.get('review_text', '') for r in reviews if r.get('review_text')]
-        if len(all_texts) < 3: return {'error': 'Dati insufficienti'}
-        
+        if len(all_texts) < 3: 
+            return {'error': 'Dati insufficienti per l\'analisi (meno di 3 recensioni).'}
+            
         client = InferenceClient(token=HF_TOKEN)
         model_id = "mistralai/Mixtral-8x7B-Instruct-v0.1" # Un modello open-source molto potente
-        
-        sample_reviews_text = "\n---\n".join([r[:300] for r in all_texts[:20]])
-        
+            
+        # Prende solo un campione per non sovraccaricare la richiesta e rimanere entro i limiti
+        sample_reviews_text = "\n---\n".join([r[:500] for r in all_texts[:50]]) # Aumentato a 50 recensioni e 500 caratteri per più contesto
+            
         # Prompt adattato per un modello istruito
         prompt = f"""
         <s>[INST] Sei un esperto SEO. Analizza le seguenti recensioni per 'Boscolo Viaggi'.
+        
         RECENSIONI:
         {sample_reviews_text}
         
         TASK:
-        1. Estrai i 3 temi più importanti.
-        2. Genera 3 proposte di FAQ basate sui temi.
-        3. Identifica 2 opportunità di contenuto SEO.
+        1. Estrai i 3 temi più importanti (es. "Assistenza Clienti", "Qualità Alloggi", "Prezzo").
+        2. Genera 3 proposte di FAQ basate sui temi per un sito web. Includi sia la domanda che una breve risposta.
+        3. Identifica 2 opportunità di contenuto SEO (es. articoli di blog, guide) per intercettare la domanda implicita nelle recensioni.
         
-        Rispondi ESCLUSIVAMENTE in formato JSON valido con le chiavi "top_themes", "faq_proposals", "content_opportunities". Non aggiungere altro testo. [/INST]
+        Rispondi ESCLUSIVAMENTE in formato JSON valido con le chiavi "top_themes" (lista di stringhe), "faq_proposals" (lista di oggetti con "question" e "answer"), "content_opportunities" (lista di stringhe). Non aggiungere altro testo, introduzioni o spiegazioni. [/INST]
         """
-        
+            
         try:
-            response = client.text_generation(prompt, model=model_id, max_new_tokens=1024, temperature=0.1)
-            # Estrae il JSON dalla risposta del modello
+            response = client.text_generation(prompt, model=model_id, max_new_tokens=2048, temperature=0.1)
+            
+            # Estrae il JSON dalla risposta del modello (ricerca pattern {.*} inclusi newline)
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            
             if not json_match:
+                logger.error(f"Risposta non JSON valida: {response}")
+                # Tenta di pulire la risposta se inizia con Markdown o altri caratteri non validi
+                clean_response = response.strip()
+                if clean_response.startswith('```json'):
+                    clean_response = clean_response.strip('```json').strip('```').strip()
+                    try:
+                        return json.loads(clean_response)
+                    except json.JSONDecodeError:
+                        raise Exception("Il modello non ha restituito un JSON valido e la pulizia è fallita.")
+                
                 raise Exception("Il modello non ha restituito un JSON valido.")
+                
             return json.loads(json_match.group(0))
+        
         except Exception as e:
             logger.error(f"Errore durante l'analisi con Hugging Face: {e}")
             raise Exception(f"Analisi AI fallita: {e}")
@@ -104,36 +145,214 @@ def analyze_reviews_with_huggingface(reviews: List[Dict]):
 st.markdown("<h1 class='main-header'>✈️ REVIEWS: Boscolo Viaggi by Maria</h1>", unsafe_allow_html=True)
 tab1, tab2, tab3 = st.tabs(["🌍 Import Dati", "📊 Dashboard Analisi", "📥 Export"])
 
+# --- TAB 1: Import Dati ---
 with tab1:
     st.markdown("### 🌍 Importa Dati Reali dalle Piattaforme")
-    col1, col2 = st.columns(2)
-    # ... (Codice di importazione per Google e TripAdvisor, omesso per brevità)
     
+    col1, col2 = st.columns(2)
+    
+    # === Google Reviews ===
+    with col1:
+        st.subheader("Google Business Profile")
+        google_place_id = st.text_input("Place ID di Google (es. ChIJX...)", value="ChIJXb7yX2vFhkcRM_p9lFq44rQ")
+        google_limit = st.slider("Numero max di recensioni Google da importare", min_value=1, max_value=500, value=100)
+        
+        if st.button("📥 Importa Recensioni Google", use_container_width=True, key="btn_google"):
+            if google_place_id:
+                try:
+                    google_reviews = fetch_google_reviews(google_place_id, google_limit)
+                    st.session_state.data['google'] = google_reviews
+                    st.session_state.flags['data_imported'] = True
+                    st.success(f"✅ Importate {len(google_reviews)} recensioni da Google.")
+                except Exception as e:
+                    st.error(f"Errore nell'importazione Google: {e}")
+            else:
+                st.warning("Inserisci un Place ID valido.")
+
+    # === TripAdvisor Reviews ===
+    with col2:
+        st.subheader("TripAdvisor")
+        ta_url = st.text_input("URL della pagina di TripAdvisor (es. [https://www.tripadvisor.it/](https://www.tripadvisor.it/)...)")
+        ta_limit = st.slider("Numero max di recensioni TA da importare", min_value=1, max_value=500, value=50)
+
+        if st.button("📥 Importa Recensioni TripAdvisor", use_container_width=True, key="btn_ta"):
+            if ta_url and "tripadvisor" in ta_url:
+                try:
+                    ta_reviews = fetch_tripadvisor_reviews(ta_url, ta_limit)
+                    st.session_state.data['tripadvisor'] = ta_reviews
+                    st.session_state.flags['data_imported'] = True
+                    st.success(f"✅ Importate {len(ta_reviews)} recensioni da TripAdvisor.")
+                except Exception as e:
+                    st.error(f"Errore nell'importazione TripAdvisor: {e}")
+            else:
+                st.warning("Inserisci un URL di TripAdvisor valido.")
+
     st.markdown("---")
     st.subheader("Riepilogo Dati Importati")
-    # ... (Codice per il riepilogo, omesso per brevità)
+    
+    total_google = len(st.session_state.data['google'])
+    total_ta = len(st.session_state.data['tripadvisor'])
+    total_all = total_google + total_ta
+    
+    col_g, col_t, col_tot, col_status = st.columns(4)
+    
+    col_g.metric("Recensioni Google", total_google)
+    col_t.metric("Recensioni TripAdvisor", total_ta)
+    col_tot.metric("Totale Recensioni", total_all)
+    
+    if total_all > 0:
+        col_status.metric("Stato Importazione", "Pronto per l'Analisi", delta="AI Ready", delta_color="normal")
+        st.session_state.flags['data_imported'] = True
+    else:
+        col_status.metric("Stato Importazione", "In attesa di dati", delta="0 Recensioni", delta_color="inverse")
+        st.session_state.flags['data_imported'] = False
 
+    if total_all > 0:
+        with st.expander("Anteprima Recensioni Importate"):
+            all_reviews_df = pd.DataFrame(
+                st.session_state.data['google'] + st.session_state.data['tripadvisor']
+            )
+            # Seleziona colonne rilevanti e rinomina per chiarezza
+            cols_to_show = [
+                'review_text', 'rating', 'timestamp', 
+                'author_name', 'source' # Assumendo che le funzioni di fetch aggiungano una chiave 'source'
+            ]
+            
+            # Aggiungi colonna 'source' se non presente (per DataForSEO non c'è nativamente)
+            if 'source' not in all_reviews_df.columns:
+                 # Questo è un placeholder; idealmente andrebbe aggiunto in fetch_...
+                all_reviews_df['source'] = 'Google' 
+                for i in range(total_google, total_all):
+                    all_reviews_df.loc[i, 'source'] = 'TripAdvisor'
+
+
+            st.dataframe(all_reviews_df.head(20).fillna('N/A')[['source', 'rating', 'review_text', 'author_name']].style.set_properties(**{'font-size': '10pt'}))
+            
+            # Pulisci i dati per l'AI, rimuovendo le recensioni vuote
+            st.session_state.data['cleaned_reviews'] = all_reviews_df[all_reviews_df['review_text'].str.strip() != ''].to_dict('records')
+            
+
+# --- TAB 2: Dashboard Analisi ---
 with tab2:
     st.header("📊 Dashboard Analisi")
+    
+    # La logica di base è già presente nel codice originale
     if not st.session_state.flags.get('data_imported', False):
         st.info("⬅️ Importa dati per eseguire un'analisi.")
     else:
-        if 'seo_analysis' not in st.session_state.data or st.session_state.data['seo_analysis'] is None:
-            if st.button("🚀 Esegui Analisi con AI Open-Source", type="primary", use_container_width=True):
-                all_reviews = st.session_state.data.get('google', []) + st.session_state.data.get('tripadvisor', [])
-                if len(all_reviews) > 0:
-                    try:
-                        st.session_state.data['seo_analysis'] = analyze_reviews_with_huggingface(all_reviews)
+        # Recupera le recensioni pulite per l'analisi
+        reviews_for_analysis = st.session_state.data.get('cleaned_reviews', [])
+        
+        if len(reviews_for_analysis) < 3:
+            st.warning(f"Sono state trovate solo {len(reviews_for_analysis)} recensioni con testo. L'analisi AI richiede almeno 3 recensioni.")
+            st.session_state.data['seo_analysis'] = None
+            st.session_state.flags['analysis_done'] = False
+        
+        elif st.session_state.data['seo_analysis'] is None:
+            if st.button(f"🚀 Esegui Analisi con AI Open-Source ({len(reviews_for_analysis)} Recensioni)", type="primary", use_container_width=True):
+                try:
+                    # Chiamata alla funzione di analisi
+                    analysis_result = analyze_reviews_with_huggingface(reviews_for_analysis)
+                    
+                    if analysis_result.get('error'):
+                         st.error(f"Errore di analisi: {analysis_result['error']}")
+                    else:
+                        st.session_state.data['seo_analysis'] = analysis_result
                         st.session_state.flags['analysis_done'] = True
                         st.success("Analisi completata!"); st.balloons(); time.sleep(1); st.rerun()
-                    except Exception as e:
-                        st.error(f"Errore durante l'analisi: {e}")
+                except Exception as e:
+                    st.error(f"Errore durante l'analisi: {e}")
         
-        if st.session_state.flags.get('analysis_done', False):
-            # ... (Codice per visualizzare i risultati, omesso per brevità)
-            pass
+        
+        # === CODICE MANCANTE: Visualizzazione Risultati ===
+        if st.session_state.flags.get('analysis_done', False) and st.session_state.data['seo_analysis']:
+            analysis = st.session_state.data['seo_analysis']
+            
+            st.markdown("## Risultati dell'Analisi AI per la SEO")
+            st.markdown("---")
+            
+            # 1. Temi Principali
+            st.subheader("🎯 3 Temi Principali emersi dalle Recensioni (User Sentiment)")
+            if 'top_themes' in analysis:
+                col_t1, col_t2, col_t3 = st.columns(3)
+                cols = [col_t1, col_t2, col_t3]
+                for i, theme in enumerate(analysis['top_themes'][:3]):
+                    cols[i].markdown(f"**Tema #{i+1}**")
+                    cols[i].success(theme)
+            
+            st.markdown("---")
+            
+            # 2. Proposte FAQ
+            st.subheader("❓ Proposte FAQ (Ideali per Sezioni Knowledge Base/Sito)")
+            if 'faq_proposals' in analysis:
+                for i, faq in enumerate(analysis['faq_proposals']):
+                    q = faq.get('question', f"Domanda {i+1} mancante")
+                    a = faq.get('answer', "Risposta mancante")
+                    with st.expander(f"**{i+1}. {q}**"):
+                        st.markdown(a)
+                        
+            st.markdown("---")
 
+            # 3. Opportunità SEO
+            st.subheader("💡 2 Opportunità di Contenuto SEO (Idee Blog/Landing Page)")
+            if 'content_opportunities' in analysis:
+                for i, opportunity in enumerate(analysis['content_opportunities'][:2]):
+                    st.info(f"**Opportunità SEO #{i+1}:** {opportunity}")
+                    
+            st.markdown("---")
+
+            with st.expander("Visualizza Output JSON Completo (Tecnico)"):
+                st.json(analysis)
+
+# --- TAB 3: Export ---
 with tab3:
-    st.header("📥 Export")
-    # ... (Codice per l'export, omesso per brevità)
-    pass
+    st.header("📥 Export Dati e Analisi")
+    
+    # === CODICE MANCANTE: Logica di Export ===
+    
+    google_data = st.session_state.data['google']
+    ta_data = st.session_state.data['tripadvisor']
+    analysis_data = st.session_state.data['seo_analysis']
+    
+    st.subheader("Export Recensioni Grezze (CSV)")
+    
+    col_e1, col_e2 = st.columns(2)
+    
+    if google_data:
+        google_df = pd.DataFrame(google_data).to_csv(index=False).encode('utf-8')
+        col_e1.download_button(
+            label=f"Scarica {len(google_data)} Recensioni Google (CSV)",
+            data=google_df,
+            file_name="boscolo_viaggi_google_reviews.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    else:
+        col_e1.info("Nessun dato Google da esportare.")
+
+    if ta_data:
+        ta_df = pd.DataFrame(ta_data).to_csv(index=False).encode('utf-8')
+        col_e2.download_button(
+            label=f"Scarica {len(ta_data)} Recensioni TripAdvisor (CSV)",
+            data=ta_df,
+            file_name="boscolo_viaggi_tripadvisor_reviews.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    else:
+        col_e2.info("Nessun dato TripAdvisor da esportare.")
+        
+    st.markdown("---")
+    
+    st.subheader("Export Risultati Analisi AI (JSON)")
+    if analysis_data:
+        json_string = json.dumps(analysis_data, indent=4)
+        st.download_button(
+            label="Scarica Analisi SEO AI (JSON)",
+            data=json_string,
+            file_name="boscolo_viaggi_seo_analysis.json",
+            mime="application/json",
+            use_container_width=True
+        )
+    else:
+        st.warning("Esegui prima l'analisi nella 'Dashboard Analisi' per poter esportare i risultati.")
