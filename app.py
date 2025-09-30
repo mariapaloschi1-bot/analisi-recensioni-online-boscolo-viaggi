@@ -171,7 +171,7 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1:
         with st.expander("🌟 Trustpilot", expanded=True):
-            tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscoloviaggi.com", key="tp_url_input")
+            tp_url = st.text_input("URL Trustpilot", "https://it.trustpilot.com/review/boscolo.com", key="tp_url_input")
             tp_limit = st.slider("Max Recensioni TP", 50, 2000, 200, key="tp_slider")
             if st.button("Importa da Trustpilot"):
                 reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, tp_url, tp_limit)
