@@ -2,13 +2,5 @@ streamlit
 pandas
 requests
 numpy
-python-docx
-openai
 google-generativeai
-plotly
-scikit-learn
-networkx
-sentence-transformers
-bertopic
-umap-learn
-hdbscan
+python-docx
