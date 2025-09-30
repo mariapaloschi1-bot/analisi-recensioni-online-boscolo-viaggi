@@ -51,17 +51,37 @@ if 'flags' not in st.session_state:
 def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dict]:
     """
     Funzione generica per chiamare gli endpoint live di DataForSEO.
+    Aggiunge logging di debug per gli errori 404.
     """
     url = f"https://api.dataforseo.com/v3/{endpoint}"
-    logger.info(f"Chiamata API a: {url}")
+    logger.info(f"Tentativo chiamata API a: {url}")
     
     with st.spinner(f"Connessione a DataForSEO per {api_name}... (può richiedere fino a 2 minuti)"):
         time.sleep(1) 
-        response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload, timeout=120)
         
-        # Questo solleva l'errore 404 se l'URL non è corretto o non hai accesso
-        response.raise_for_status() 
+        try:
+            response = requests.post(url, auth=(DFSEO_LOGIN, DFSEO_PASS), json=payload, timeout=120)
+            response.raise_for_status() # Solleva eccezione per 4xx/5xx
         
+        except requests.exceptions.HTTPError as e:
+            # Cattura l'errore HTTP (es. 404) e logga il contenuto per debug
+            error_message = f"Errore nell'importazione {api_name}: {e}"
+            try:
+                # Tenta di leggere il corpo della risposta per messaggi di errore specifici di DataForSEO
+                error_data = response.json()
+                error_message += f"\nContenuto risposta: {error_data}"
+            except (json.JSONDecodeError, UnboundLocalError):
+                error_message += f"\nRisposta non JSON o vuota per l'errore HTTP."
+
+            logger.error(error_message)
+            # Rilancia l'eccezione con il messaggio originale
+            raise Exception(error_message)
+        
+        except Exception as e:
+            # Cattura altri errori (es. timeout, connessione)
+            raise Exception(f"Errore generico API {api_name}: {e}")
+        
+        # Gestione risposta JSON DataForSEO
         data = response.json()
         
         if data.get("tasks_error", 0) > 0:
@@ -82,16 +102,16 @@ def api_live_call(api_name: str, endpoint: str, payload: List[Dict]) -> List[Dic
         return items
 
 def fetch_google_reviews(place_id: str, limit: int) -> List[Dict]:
-    """Recupera recensioni da Google Business Profile (tramite Google Maps endpoint)."""
+    """Recupera recensioni da Google Business Profile (tentativo con l'originale business_data)."""
     payload = [{"place_id": place_id, "limit": limit, "language_code": "it"}]
-    # ENDPOINT AGGIORNATO: Passaggio a Google Maps Reviews Live
-    return api_live_call("Google", "google/maps/reviews/live", payload)
+    # Ritorno all'endpoint originale business_data
+    return api_live_call("Google", "business_data/google/reviews/live", payload)
 
 def fetch_tripadvisor_reviews(ta_url: str, limit: int) -> List[Dict]:
     """Recupera recensioni da TripAdvisor."""
     clean_url = ta_url.split('?')[0]
     payload = [{"url": clean_url, "limit": limit}]
-    # ENDPOINT LASCIATO IN BUSINESS_DATA
+    # Endpoint TripAdvisor
     return api_live_call("TripAdvisor", "business_data/tripadvisor/reviews/live", payload)
 
 def analyze_reviews_with_huggingface(reviews: List[Dict]) -> Dict[str, Any]:
