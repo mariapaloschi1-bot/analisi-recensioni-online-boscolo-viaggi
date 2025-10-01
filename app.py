@@ -6448,7 +6448,7 @@ with tab2:
                 
                 # Raccogli top amenities per schema
                 top_amenities = sorted(all_amenities.items(), key=lambda x: x[1], reverse=True)[:15] if 'all_amenities' in locals() else []
-# Inizia la definizione dello schema
+    # Inizia la definizione dello schema
                 schema_example = {
                     "@context": "https://schema.org",
                     "@type": "TravelAgency", # TIPO CORRETTO PER TOUR OPERATOR
@@ -6456,8 +6456,8 @@ with tab2:
                     "serviceType": "Pacchetti turistici e viaggi organizzati",
                     "aggregateRating": {
                         "@type": "AggregateRating",
-                        "ratingValue": "4.2", # Usare rating dinamico qui
-                        "reviewCount": "100" # Usare conteggio dinamico qui
+                        "ratingValue": "4.2", 
+                        "reviewCount": "100" 
                     },
                     "review": {
                         "@type": "Review",
@@ -6470,6 +6470,9 @@ with tab2:
                 }
 
                 st.code(json.dumps(schema_example, indent=2), language='json')
+                
+                st.download_button(
+                    "💾 Download FAQ Schema JSON",
             with seo_tabs[4]:  # AI SEO Strategy
                 st.markdown("#### 🤖 AI-Powered SEO Strategy")
                 
