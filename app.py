@@ -577,24 +577,24 @@ class EnterpriseReviewsAnalyzer:
         self.emotion_categories = [
             'joy', 'sadness', 'anger', 'fear', 'surprise', 'disgust', 'trust', 'anticipation',
             'love', 'optimism', 'disappointment', 'contempt', 'anxiety', 'hope', 'pride', 
-            'gratitude', 'frustration', 'excitement', 'relief'
-        ]
+            'gratitude', 'frustration', 'excitement', 'relief']
         
-       self.business_aspects = {'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
-          'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
-          'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
-          'tour_operator': [
-              'organizzazione',
-              'itinerario',
-              'guida turistica',
-              'trasporti',
-              'alloggi',
-              'supporto clienti',
-              'qualità/prezzo',
-              'assicurazione'
-          ],
-          'generale': ['servizio', 'qualità', 'prezzo', 'staff', 'esperienza', 'velocità', 'ambiente']
-      }
+        self.business_aspects = {
+            'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
+            'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
+            'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
+            'tour_operator': [
+                'organizzazione',
+                'itinerario',
+                'guida turistica',
+                'trasporti',
+                'alloggi',
+                'supporto clienti',
+                'qualità/prezzo',
+                'assicurazione'
+            ],
+            'generale': ['servizio', 'qualità', 'prezzo', 'staff', 'esperienza', 'velocità', 'ambiente']
+        }
         
         # Keywords per Customer Journey
         self.journey_keywords = {
