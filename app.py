@@ -8614,8 +8614,7 @@ st.markdown("""
 # Sidebar Credits esteso
 with st.sidebar:
     st.markdown("---")
-    st.markdown("### 🔧 Sviluppato con")
-    st.markdown("**la pazienza**")
+    st.markdown("### 🔧 Sviluppato con pazienza")
     
     st.markdown("### 🌍 Piattaforme v2.1")
     platform_badges = [
