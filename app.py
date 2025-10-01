@@ -6474,7 +6474,7 @@ with tab2:
                 st.download_button(
                     "💾 Download FAQ Schema JSON",
             with seo_tabs[4]:  # AI SEO Strategy
-                st.markdown("#### 🤖 AI-Powered SEO Strategy")
+                st.markdown("#### 🤖 AI-Powered SEO Strategy"))
                 
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
