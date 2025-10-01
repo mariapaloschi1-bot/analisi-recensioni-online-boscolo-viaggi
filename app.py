@@ -3,7 +3,7 @@
 Reviews Analyzer v2.0 ENTERPRISE EDITION
 Supports: Trustpilot, Google Reviews, TripAdvisor, Yelp (via Extended Reviews), Reddit
 Advanced Analytics: Multi-Dimensional Sentiment, ABSA, Topic Modeling, Customer Journey
-Autore: Antonio De Luca
+Autore: Mari
 """
 
 import streamlit as st
