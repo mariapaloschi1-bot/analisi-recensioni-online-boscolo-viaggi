@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v2.0 ENTERPRISE EDITIOn
+Reviews Analyzer v2.0 ENTERPRISE EDITION
 Supports: Trustpilot, Google Reviews, TripAdvisor, Yelp (via Extended Reviews), Reddit
 Advanced Analytics: Multi-Dimensional Sentiment, ABSA, Topic Modeling, Customer Journey
 Autore: Mari
@@ -6449,10 +6449,16 @@ with tab2:
                 # Raccogli top amenities per schema
                 top_amenities = sorted(all_amenities.items(), key=lambda x: x[1], reverse=True)[:15] if 'all_amenities' in locals() else []
                 
-            schema_example = {"@context": "https://schema.org",
+schema_example = {
+                    "@context": "https://schema.org",
                     "@type": "TravelAgency", # TIPO CORRETTO PER TOUR OPERATOR
                     "name": "Boscolo Viaggi",
                     "serviceType": "Pacchetti turistici e viaggi organizzati",
+                    "aggregateRating": {
+                        "@type": "AggregateRating",
+                        "ratingValue": "4.2", # Usare rating dinamico qui
+                        "reviewCount": "100" # Usare conteggio dinamico qui
+                    },
                     "review": {
                         "@type": "Review",
                         "reviewRating": {
@@ -6462,9 +6468,6 @@ with tab2:
                         "author": {"@type": "Person", "name": "Utente Esempio"}
                     }
                 }
-
-        }
-    }
 
                 st.code(json.dumps(schema_example, indent=2), language='json')
             
