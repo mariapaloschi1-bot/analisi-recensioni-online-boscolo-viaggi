@@ -1,5 +1,3 @@
-Boscolo codice
-
 #!/usr/bin/env python3
 """
 Reviews Analyzer v2.0 ENTERPRISE EDITION
