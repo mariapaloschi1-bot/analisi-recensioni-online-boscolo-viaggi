@@ -5401,7 +5401,7 @@ def create_multiplatform_visualizations(reviews_data):
 # --- INTERFACCIA PRINCIPALE ---
 
 # Header con nuovo design multi-platform
-st.markdown("<h1 class='main-header'>🌍 REVIEWS NLZYR</h1>", unsafe_allow_html=True)
+st.markdown("<h1 class='main-header'>🌍 BOSCOLO VIAGGI REVIEWS by Maria</h1>", unsafe_allow_html=True)
 
 # Sidebar con statistiche multi-platform
 with st.sidebar:
