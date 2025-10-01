@@ -261,6 +261,8 @@ if 'reviews_data' not in st.session_state:
             'search_params': {}
         }
     }
+if 'session_start' not in st.session_state:
+    st.session_state.session_start = datetime.now()
 
 # --- FUNZIONI HELPER E DI VALIDAZIONE INPUT ---
 
@@ -332,6 +334,7 @@ def handle_google_id_input(google_input: str) -> Optional[str]:
         return None
 
 # (Il resto delle classi e delle funzioni di analisi è incluso qui)
+# ...
 
 # ============================================================================
 # INTERFACCIA PRINCIPALE (UI)
@@ -386,328 +389,109 @@ with tab1:
     st.markdown("### 🌍 Multi-Platform Data Import")
     st.markdown("Importa recensioni e discussioni da tutte le piattaforme supportate")
     
-    # Input section organizzata per piattaforme
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("#### 🔗 Platform URLs")
         
-        # Trustpilot
         with st.expander("🌟 Trustpilot"):
-            trustpilot_url = st.text_input(
-                "URL Trustpilot",
-                placeholder="https://it.trustpilot.com/review/example.com",
-                help="URL completo della pagina Trustpilot"
-            )
+            trustpilot_url = st.text_input("URL Trustpilot", placeholder="https://it.trustpilot.com/review/example.com")
             tp_limit = st.slider("Max recensioni Trustpilot", 50, 2000, 200, key="tp_limit")
-            
             if st.button("📥 Import Trustpilot", use_container_width=True):
                 if trustpilot_url:
-                    try:
-                        reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, trustpilot_url, tp_limit)
-                        st.session_state.reviews_data['trustpilot_reviews'] = reviews
+                    reviews = safe_api_call_with_progress(fetch_trustpilot_reviews, trustpilot_url, tp_limit)
+                    st.session_state.reviews_data['trustpilot_reviews'] = reviews if reviews else []
+                    if reviews:
                         show_message(f"✅ {len(reviews)} recensioni Trustpilot importate!", "success")
                         st.rerun()
-                    except Exception as e:
-                        error_details = str(e)
-                        if "timeout" in error_details.lower() or "task in queue" in error_details.lower():
-                            show_message("⏱️ Code lunghe su Trustpilot", "warning", 
-                                       "Trustpilot ha code molto lunghe oggi. Riprova tra 10-15 minuti o riduci il numero di recensioni a 100-150.")
-                        elif "domain not found" in error_details.lower() or "40501" in error_details:
-                            show_message("🌐 Dominio non trovato", "error", 
-                                       "Verifica che il dominio esista su Trustpilot e l'URL sia corretto.")
-                        elif "limite api" in error_details.lower() or "40402" in error_details:
-                            show_message("🚫 Limite API raggiunto", "error", 
-                                       "Hai raggiunto il limite API DataForSEO. Attendi qualche minuto prima di riprovare.")
-                        else:
-                            show_message("❌ Errore Trustpilot", "error", error_details)
                 else:
                     show_message("⚠️ Inserisci URL Trustpilot", "warning")
         
-        # TripAdvisor
         with st.expander("✈️ TripAdvisor"):
-            tripadvisor_url = st.text_input(
-                "URL TripAdvisor",
-                placeholder="https://www.tripadvisor.com/Hotel_Review-g...",
-                help="URL completo hotel/ristorante/attrazione TripAdvisor"
-            )
-            ta_limit = st.slider("Max recensioni TripAdvisor", 50, 500, 2000, key="ta_limit")
-            
+            tripadvisor_url = st.text_input("URL TripAdvisor", placeholder="https://www.tripadvisor.it/...")
+            ta_limit = st.slider("Max recensioni TripAdvisor", 50, 2000, 500, key="ta_limit")
             if st.button("📥 Import TripAdvisor", use_container_width=True):
                 if tripadvisor_url:
-                    # Controllo URL TripAdvisor
-                    if 'tripadvisor.' not in tripadvisor_url.lower():
-                        show_message("⚠️ URL deve essere di TripAdvisor", "warning", 
-                                   "Usa un URL come: tripadvisor.com o tripadvisor.it")
-                    else:
-                        try:
-                            reviews = safe_api_call_with_progress(fetch_tripadvisor_reviews, tripadvisor_url, "Italy", ta_limit)
-                            st.session_state.reviews_data['tripadvisor_reviews'] = reviews
-                            show_message(f"✅ {len(reviews)} recensioni TripAdvisor importate!", "success")
-                            st.rerun()
-                        except Exception as e:
-                            error_details = str(e)
-                            if "Invalid Field" in error_details or "keyword" in error_details.lower():
-                                show_message("❌ Parametri API TripAdvisor non validi", "error", 
-                                           "L'API potrebbe non supportare questo tipo di URL. Prova con un URL diverso o usa altre piattaforme (Trustpilot, Google).")
-                            elif "not found" in error_details.lower():
-                                show_message("❌ Hotel/attrazione non trovata", "error", 
-                                           "Verifica che l'URL TripAdvisor sia corretto e la struttura esista.")
-                            elif "timeout" in error_details.lower():
-                                show_message("⏱️ Timeout TripAdvisor", "warning", 
-                                           "TripAdvisor ha tempi di risposta lunghi. Riprova tra qualche minuto.")
-                            elif "tutti i tentativi falliti" in error_details.lower():
-                                show_message("🔄 TripAdvisor non disponibile", "error", 
-                                           "L'API TripAdvisor non riesce a processare questa richiesta. Prova con un URL diverso o usa altre piattaforme.")
-                            else:
-                                show_message("❌ Errore TripAdvisor", "error", error_details)
+                    reviews = safe_api_call_with_progress(fetch_tripadvisor_reviews, tripadvisor_url, "Italy", ta_limit)
+                    st.session_state.reviews_data['tripadvisor_reviews'] = reviews if reviews else []
+                    if reviews:
+                        show_message(f"✅ {len(reviews)} recensioni TripAdvisor importate!", "success")
+                        st.rerun()
                 else:
                     show_message("⚠️ Inserisci URL TripAdvisor", "warning")
-    
+
     with col2:
         st.markdown("#### 🆔 IDs & Names")
         
-        # Google Reviews
         with st.expander("📍 Google Reviews"):
-            google_place_id = st.text_input(
-                "Google Place ID",
-                placeholder="ChIJ85Gduc_ehUcRQdQYL8rHsAk",
-                help="Place ID da Google Maps"
-            )
-            g_limit = st.slider("Max Google Reviews", 50, 500, 2000, key="g_limit")
-            
+            google_input = st.text_input("Google Place ID o URL Google Maps", placeholder="Incolla qui Place ID (ChIJ...) o l'URL di Google Maps")
+            g_limit = st.slider("Max Google Reviews", 50, 2000, 500, key="g_limit")
             if st.button("📥 Import Google Reviews", use_container_width=True):
-                if google_place_id:
+                place_id = handle_google_id_input(google_input)
+                if place_id:
                     try:
-                        reviews = safe_api_call_with_progress(fetch_google_reviews, google_place_id, "Italy", g_limit)
-                        st.session_state.reviews_data['google_reviews'] = reviews
-                        show_message(f"✅ {len(reviews)} Google Reviews importate!", "success")
-                        st.rerun()
+                        reviews = safe_api_call_with_progress(fetch_google_reviews, place_id, "Italy", g_limit)
+                        if reviews is not None and len(reviews) > 0:
+                            st.session_state.reviews_data['google_reviews'] = reviews
+                            show_message(f"✅ {len(reviews)} Google Reviews importate!", "success")
+                            st.rerun()
+                        elif reviews is not None:
+                            show_message("ℹ️ Task completato, ma 0 recensioni trovate.", "info", "Possibili cause:\n- Nessuna recensione per questo luogo.\n- Nessuna recensione nella lingua/località selezionata.")
                     except Exception as e:
-                        error_details = str(e)
-                        if "place id non trovato" in error_details.lower() or "40002" in error_details:
-                            show_message("🗺️ Place ID non valido", "error", 
-                                       "Verifica che il Place ID sia corretto e inizi con 'ChIJ'. Puoi ottenerlo da Google Maps.")
-                        elif "place id non valido" in error_details.lower():
-                            show_message("🔍 Formato Place ID errato", "error", 
-                                       "Il Place ID deve iniziare con 'ChIJ' e essere nel formato corretto.")
-                        elif "timeout" in error_details.lower():
-                            show_message("⏱️ Timeout Google Reviews", "warning", 
-                                       "Google Reviews ha tempi lunghi. Riprova tra 5-10 minuti.")
-                        elif "'NoneType' object is not iterable" in error_details:
-                            show_message("📭 Nessuna recensione disponibile", "warning", 
-                                       "Google non ha restituito recensioni per questo Place ID. Verifica che il business abbia recensioni pubbliche.")
-                        elif "limite api" in error_details.lower() or "40000" in error_details:
-                            show_message("🚫 Limite API Google raggiunto", "error", 
-                                       "Hai raggiunto il limite API. Attendi qualche minuto prima di riprovare.")
-                        else:
-                            show_message("❌ Errore Google Reviews", "error", error_details)
-                else:
-                    show_message("⚠️ Inserisci Google Place ID", "warning", 
-                               "Puoi trovare il Place ID su Google Maps aprendo il business e guardando nell'URL.")
-        
-        # Extended Reviews (Yelp + Multi)
+                        show_message("❌ Errore Google Reviews", "error", str(e))
+
         with st.expander("🔍 Extended Reviews (Yelp + Multi)"):
-            business_name_ext = st.text_input(
-                "Nome Business",
-                placeholder="Nome del business/ristorante/hotel",
-                help="Nome per cercare recensioni su Yelp, TripAdvisor e altre piattaforme tramite Google"
-            )
+            business_name_ext = st.text_input("Nome Business", placeholder="Nome del business/ristorante/hotel")
             ext_limit = st.slider("Max Extended Reviews", 50, 2000, 1000, key="ext_limit")
-            location = st.selectbox("Location", ["Italy", "United States", "United Kingdom", "Germany", "France"], key="ext_location")
-            
             if st.button("📥 Import Extended Reviews", use_container_width=True):
                 if business_name_ext:
                     try:
-                        extended_data = safe_api_call_with_progress(fetch_google_extended_reviews, business_name_ext, location, ext_limit)
-                        st.session_state.reviews_data['extended_reviews'] = extended_data
-                        
-                        # Mostra breakdown per source
-                        sources_info = []
-                        for source, reviews in extended_data['sources_breakdown'].items():
-                            sources_info.append(f"{source}: {len(reviews)}")
-                        
-                        if sources_info:
-                            show_message(f"✅ {extended_data['total_count']} Extended Reviews importate!", "success", 
-                                       f"Sources: {', '.join(sources_info)}")
-                        else:
+                        extended_data = safe_api_call_with_progress(fetch_google_extended_reviews, business_name_ext, "Italy", ext_limit)
+                        if extended_data and extended_data['total_count'] > 0:
+                            st.session_state.reviews_data['extended_reviews'] = extended_data
                             show_message(f"✅ {extended_data['total_count']} Extended Reviews importate!", "success")
-                        
-                        st.rerun()
-                    except Exception as e:
-                        error_details = str(e)
-                        if "unhashable type" in error_details:
-                            show_message("🔧 Errore formato dati", "error", 
-                                       "L'API Extended Reviews ha restituito dati in formato non valido. Riprova con un nome business più specifico (es. 'Hotel Name Roma' invece di 'Hotel').")
-                        elif "business non trovato" in error_details.lower() or "40002" in error_details:
-                            show_message("🔍 Business non trovato", "warning", 
-                                       "Prova con un nome più specifico includendo città o caratteristiche distintive (es. 'Ristorante Mario Milano' invece di 'Mario').")
-                        elif "parametri non validi" in error_details.lower():
-                            show_message("⚙️ Parametri non validi", "error", 
-                                       "Verifica che il nome business non contenga caratteri speciali e sia specifico.")
-                        elif "timeout" in error_details.lower():
-                            show_message("⏱️ Timeout Extended Reviews", "warning", 
-                                       "Extended Reviews richiede più tempo. Riprova tra qualche minuto.")
+                            st.rerun()
                         else:
-                            show_message("❌ Errore Extended Reviews", "error", error_details)
+                            show_message("ℹ️ Task completato, ma 0 recensioni trovate.", "info", "Prova con un nome più specifico o controlla che ci siano recensioni disponibili.")
+                    except Exception as e:
+                        show_message("❌ Errore Extended Reviews", "error", str(e))
                 else:
-                    show_message("⚠️ Inserisci nome business", "warning", 
-                               "Usa un nome specifico e completo per migliori risultati.")
-    
-    # Reddit section (full width) - UPDATED VERSION
-    st.markdown("---")
-    with st.expander("💬 Reddit Discussions"):
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            reddit_urls_input = st.text_area(
-                "🔗 URL Reddit o Pagine Web",
-                placeholder="""Inserisci URL (uno per riga):
-https://www.fourseasons.com/florence/
-https://example.com/article
-https://reddit.com/r/travel/comments/...
+                    show_message("⚠️ Inserisci il nome del business", "warning")
 
-L'API mostrerà dove questi URL sono stati condivisi su Reddit""",
-                height=150,
-                help="Inserisci URL di pagine web per vedere dove sono state condivise su Reddit"
-            )
-        
-        with col2:
-            reddit_limit = st.number_input(
-                "📊 Max Discussioni",
-                min_value=10,
-                max_value=1000,
-                value=100,
-                step=50,
-                help="Numero massimo di discussioni da recuperare"
-            )
-        
-        st.markdown("**ℹ️ Come funziona:**")
-        st.caption("L'API cerca dove gli URL sono stati condivisi su Reddit")
-        
+    with st.expander("💬 Reddit Discussions"):
+        reddit_urls_input = st.text_area("🔗 URL Pagine Web da cercare su Reddit", placeholder="Inserisci un URL per riga...")
+        reddit_limit = st.number_input("Max Discussioni", min_value=10, value=100)
         if st.button("📥 Import Reddit Discussions", use_container_width=True):
-            if reddit_urls_input.strip():
-                try:
-                    discussions = safe_api_call_with_progress(
-                        fetch_reddit_discussions,
-                        reddit_urls_input,
-                        None,  # subreddits non usati
-                        reddit_limit
-                    )
-                    st.session_state.reviews_data['reddit_discussions'] = discussions
-                    
-                    if discussions:
-                        st.success(f"✅ {len(discussions)} discussioni Reddit importate!")
-                    else:
-                        st.warning("⚠️ Nessuna discussione trovata per gli URL forniti")
+            if reddit_urls_input:
+                discussions = safe_api_call_with_progress(fetch_reddit_discussions, reddit_urls_input, limit=reddit_limit)
+                st.session_state.reviews_data['reddit_discussions'] = discussions if discussions else []
+                if discussions:
+                    show_message(f"✅ {len(discussions)} discussioni Reddit importate!", "success")
                     st.rerun()
-                except Exception as e:
-                    error_msg = str(e)
-                    st.error(f"❌ Errore: {error_msg}")
             else:
-                st.warning("⚠️ Inserisci almeno un URL")
-        
-        # Info box
-        st.info("""
-        **📌 Importante:** L'API Reddit di DataForSEO funziona così:
-        - Inserisci URL di **pagine web** (non URL Reddit)
-        - L'API trova dove quelle pagine sono state **condivise su Reddit**
-        - Es: inserisci `fourseasons.com/florence` per trovare discussioni su quel sito
-        
-        **Per cercare per keyword:** Usa Google Search manualmente e incolla gli URL trovati
-        """)
+                show_message("⚠️ Inserisci almeno un URL", "warning")
     
-    # Stato attuale multi-platform
-    st.markdown("---")
-    st.markdown("### 📊 Stato Multi-Platform")
-    
-    tp_count = len(st.session_state.reviews_data['trustpilot_reviews'])
-    g_count = len(st.session_state.reviews_data['google_reviews'])
-    ta_count = len(st.session_state.reviews_data['tripadvisor_reviews'])
-    ext_count = st.session_state.reviews_data['extended_reviews']['total_count']
-    reddit_count = len(st.session_state.reviews_data['reddit_discussions'])
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        create_metric_card("🌟 Trustpilot", f"{tp_count}")
-    with col2:
-        create_metric_card("📍 Google", f"{g_count}")
-    with col3:
-        create_metric_card("✈️ TripAdvisor", f"{ta_count}")
-    with col4:
-        create_metric_card("🔍 Extended", f"{ext_count}")
-    with col5:
-        create_metric_card("💬 Reddit", f"{reddit_count}")
-    
-    total_data = tp_count + g_count + ta_count + ext_count + reddit_count
-    
-    # Azioni globali
     if total_data > 0:
         st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        
+        col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Reset Tutti i Dati", use_container_width=True):
                 st.session_state.reviews_data = {
-                    'trustpilot_reviews': [],
-                    'google_reviews': [],
-                    'tripadvisor_reviews': [],
+                    'trustpilot_reviews': [], 'google_reviews': [], 'tripadvisor_reviews': [],
                     'extended_reviews': {'all_reviews': [], 'sources_breakdown': {}, 'total_count': 0},
-                    'reddit_discussions': [],
-                    'analysis_results': {},
-                    'ai_insights': "",
-                    'brand_keywords': {
-                        'raw_keywords': [],
-                        'filtered_keywords': [],
-                        'analysis_results': {},
-                        'ai_insights': {},
-                        'search_params': {}
-                    }
+                    'reddit_discussions': [], 'analysis_results': {}, 'ai_insights': "",
+                    'brand_keywords': {'raw_keywords': [], 'filtered_keywords': [], 'analysis_results': {}, 'ai_insights': {}, 'search_params': {}}
                 }
-                show_message("🔄 Tutti i dati sono stati resettati", "success")
+                show_message("🔄 Dati resettati.", "success")
                 st.rerun()
-        
         with col2:
             if st.button("📊 Avvia Analisi Multi-Platform", type="primary", use_container_width=True):
-                try:
-                    with st.spinner("📊 Analisi cross-platform in corso..."):
-                        analysis_results = {}
-                        
-                        # Analizza ogni piattaforma
-                        if st.session_state.reviews_data['trustpilot_reviews']:
-                            analysis_results['trustpilot_analysis'] = analyze_reviews(st.session_state.reviews_data['trustpilot_reviews'], 'trustpilot')
-                        
-                        if st.session_state.reviews_data['google_reviews']:
-                            analysis_results['google_analysis'] = analyze_reviews(st.session_state.reviews_data['google_reviews'], 'google')
-                        
-                        if st.session_state.reviews_data['tripadvisor_reviews']:
-                            analysis_results['tripadvisor_analysis'] = analyze_reviews(st.session_state.reviews_data['tripadvisor_reviews'], 'tripadvisor')
-                        
-                        if st.session_state.reviews_data['extended_reviews']['total_count'] > 0:
-                            ext_data = st.session_state.reviews_data['extended_reviews']
-                            analysis = analyze_reviews(ext_data['all_reviews'], 'extended_reviews')
-                            # Aggiungi breakdown per source
-                            analysis['sources_breakdown'] = {}
-                            for source, reviews in ext_data['sources_breakdown'].items():
-                                analysis['sources_breakdown'][source] = analyze_reviews(reviews, source)
-                            analysis_results['extended_reviews_analysis'] = analysis
-                        
-                        if st.session_state.reviews_data['reddit_discussions']:
-                            analysis_results['reddit_discussions_analysis'] = analyze_reddit_discussions(st.session_state.reviews_data['reddit_discussions'])
-                        
-                        st.session_state.reviews_data['analysis_results'] = analysis_results
-                        
-                    show_message("📊 Analisi multi-platform completata con successo!", "success", 
-                               f"Analizzate {len(analysis_results)} piattaforme con {total_data} items totali.")
+                with st.spinner("📊 Analisi in corso..."):
+                    all_data = st.session_state.reviews_data
+                    analysis_results = analyze_multi_platform_reviews(all_data)
+                    st.session_state.reviews_data['analysis_results'] = analysis_results
+                    show_message("📊 Analisi completata!", "success")
                     st.rerun()
-                except Exception as e:
-                    show_message("❌ Errore durante l'analisi", "error", str(e))
-        
-        with col3:
-            if st.button("🚀 Quick Import Demo", use_container_width=True):
-                show_message("🎭 Demo mode attivata", "info", 
-                           "Questa funzione simula l'import da multiple piattaforme per test e demo.")
 
 with tab2:
     st.markdown("### 📊 Cross-Platform Analysis Dashboard")
