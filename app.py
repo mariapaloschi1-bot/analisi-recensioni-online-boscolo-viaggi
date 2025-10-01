@@ -581,21 +581,21 @@ class EnterpriseReviewsAnalyzer:
         ]
         
        self.business_aspects = {
-            'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
-            'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
-            'retail': ['accompagnatore', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff', ‘guida’],
-            'tour_operator': [
-                'organizzazione', 
-                'itinerario', 
-                'guida turistica', 
-                'trasporti', 
-                'alloggi', 
-                'supporto clienti', 
-                'qualità/prezzo', 
-                'assicurazione'
-            ],
-            'generale': ['servizio', 'qualità', 'prezzo', 'staff', 'esperienza', 'velocità', 'ambiente']
-        }
+          'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
+          'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
+          'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
+          'tour_operator': [
+              'organizzazione',
+              'itinerario',
+              'guida turistica',
+              'trasporti',
+              'alloggi',
+              'supporto clienti',
+              'qualità/prezzo',
+              'assicurazione'
+          ],
+          'generale': ['servizio', 'qualità', 'prezzo', 'staff', 'esperienza', 'velocità', 'ambiente']
+      }
         
         # Keywords per Customer Journey
         self.journey_keywords = {
