@@ -580,8 +580,7 @@ class EnterpriseReviewsAnalyzer:
             'gratitude', 'frustration', 'excitement', 'relief'
         ]
         
-       self.business_aspects = {
-     'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
+       self.business_aspects = {'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
           'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
           'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
           'tour_operator': [
