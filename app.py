@@ -3430,9 +3430,9 @@ with tab6:  # Export
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, var(--dark-purple) 0%, var(--primary-purple) 25%, var(--trustpilot-green) 50%, var(--google-blue) 75%, var(--tripadvisor-green) 100%); border-radius: 15px;">
-    <p style="color: white; font-size: 1.2em; font-weight: 600;">🌍 <strong>REVIEWS NLYZR</strong></p>
+    <p style="color: white; font-size: 1.2em; font-weight: 600;">🌍 <strong>REVIEWS ANALYZER</strong></p>
     <p style="color: white;">Reviews: Trustpilot • Google • TripAdvisor • Yelp • Reddit | Keywords: Google Ads</p>
-    <p style="color: white;">Developed by Antonio De Luca • Powered by DataForSEO & OpenAI</p>
+    <p style="color: white;">Developed with love 🧡 • Powered by DataForSEO & OpenAI</p>
 </div>
 """, unsafe_allow_html=True)
 
