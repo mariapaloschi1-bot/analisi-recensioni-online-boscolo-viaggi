@@ -7444,9 +7444,16 @@ with tab4:  # Brand Keywords Analysis
             help="Inserisci il nome del brand da analizzare"
         )
         
-        # Seed keywords suggestions
+          # Seed keywords suggestions
         if brand_name:
-           suggested_seeds = [ brand_name, f"{brand_name} recensioni", f"{brand_name} opinioni", f"{brand_name} itinerari", f"{brand_name} tour", f"{brand_name} guide" ]
+            suggested_seeds = [
+                brand_name, 
+                f"{brand_name} recensioni", 
+                f"{brand_name} opinioni", 
+                f"{brand_name} itinerari", 
+                f"{brand_name} tour", 
+                f"{brand_name} guide"
+            ]
             
             st.markdown("**🎯 Seed Keywords Suggerite:**")
             seed_keywords = st.text_area(
@@ -7454,7 +7461,6 @@ with tab4:  # Brand Keywords Analysis
                 value="\n".join(suggested_seeds),
                 height=150
             )
-    
     with col2:
         st.markdown("**🔧 Filtri Keywords**")
         
