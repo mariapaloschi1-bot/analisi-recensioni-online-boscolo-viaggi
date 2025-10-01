@@ -6448,8 +6448,8 @@ with tab2:
                 
                 # Raccogli top amenities per schema
                 top_amenities = sorted(all_amenities.items(), key=lambda x: x[1], reverse=True)[:15] if 'all_amenities' in locals() else []
-                
-schema_example = {
+# Inizia la definizione dello schema
+                schema_example = {
                     "@context": "https://schema.org",
                     "@type": "TravelAgency", # TIPO CORRETTO PER TOUR OPERATOR
                     "name": "Boscolo Viaggi",
@@ -6467,9 +6467,9 @@ schema_example = {
                         },
                         "author": {"@type": "Person", "name": "Utente Esempio"}
                     }
+                }
 
                 st.code(json.dumps(schema_example, indent=2), language='json')
-            
             with seo_tabs[4]:  # AI SEO Strategy
                 st.markdown("#### 🤖 AI-Powered SEO Strategy")
                 
