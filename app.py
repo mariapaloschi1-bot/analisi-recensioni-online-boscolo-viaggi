@@ -3,7 +3,7 @@
 Reviews Analyzer v2.0 ENTERPRISE EDITION
 Supports: Trustpilot, Google Reviews, TripAdvisor, Yelp (via Extended Reviews), Reddit
 Advanced Analytics: Multi-Dimensional Sentiment, ABSA, Topic Modeling, Customer Journey
-Autore: Mari
+Autore: Antonio De Luca
 """
 
 import streamlit as st
@@ -12,25 +12,160 @@ import requests
 import time
 import json
 import re
-import numpy as np
-from datetime import datetime
+import numpy as np  # AGGIUNTO per calcoli numerici
+from datetime import datetime, timedelta
 import logging
 from docx import Document
 from openai import OpenAI
 from collections import Counter
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import threading
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-import io
-import zipfile
+from typing import Dict, List, Tuple, Optional  # AGGIUNTO per type hints
+from dataclasses import dataclass  # AGGIUNTO per strutture dati
 
 # ============================================================================
-# CONFIGURAZIONE PAGINA (DEVE ESSERE IL PRIMO COMANDO STREAMLIT)
+# ENTERPRISE LIBRARIES - INIZIALIZZAZIONE ROBUSTA
 # ============================================================================
+
+# Flags di disponibilità
+ENTERPRISE_LIBS_AVAILABLE = False
+HDBSCAN_AVAILABLE = False
+BERTOPIC_AVAILABLE = False
+PLOTLY_AVAILABLE = False
+
+# Step 1: Verifica Plotly (essenziale per visualizzazioni)
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    px = None
+    go = None
+    st.error("❌ Plotly mancante: pip install plotly")
+
+# Step 2: Verifica librerie ML core
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.cluster import KMeans
+    import networkx as nx
+    ML_CORE_AVAILABLE = True
+except ImportError:
+    ML_CORE_AVAILABLE = False
+    st.error("❌ Scikit-learn/NetworkX mancanti: pip install scikit-learn networkx")
+
+# Step 3: Verifica Sentence Transformers
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    st.warning("⚠️ Sentence Transformers mancante: pip install sentence-transformers")
+
+# Step 4: Verifica HDBSCAN (opzionale)
+try:
+    import hdbscan
+    HDBSCAN_AVAILABLE = True
+except ImportError:
+    HDBSCAN_AVAILABLE = False
+    st.info("ℹ️ HDBSCAN non disponibile - usando KMeans per clustering")
+
+# Step 5: Verifica BERTopic
+try:
+    from bertopic import BERTopic
+    BERTOPIC_AVAILABLE = True
+except ImportError:
+    BERTOPIC_AVAILABLE = False
+    st.warning("⚠️ BERTopic mancante: pip install bertopic")
+
+# Determina disponibilità enterprise complessiva
+ENTERPRISE_LIBS_AVAILABLE = (
+    PLOTLY_AVAILABLE and 
+    ML_CORE_AVAILABLE and 
+    SENTENCE_TRANSFORMERS_AVAILABLE and 
+    BERTOPIC_AVAILABLE
+)
+
+# Status report enterprise
+if ENTERPRISE_LIBS_AVAILABLE:
+    clustering_method = "HDBSCAN" if HDBSCAN_AVAILABLE else "KMeans"
+    st.success(f"✅ Enterprise Analytics: ATTIVATE (Clustering: {clustering_method})")
+else:
+    st.error("❌ Alcune librerie Enterprise mancanti")
+    
+    # Mostra cosa manca
+    missing_libs = []
+    if not PLOTLY_AVAILABLE:
+        missing_libs.append("plotly")
+    if not ML_CORE_AVAILABLE:
+        missing_libs.append("scikit-learn networkx")
+    if not SENTENCE_TRANSFORMERS_AVAILABLE:
+        missing_libs.append("sentence-transformers")
+    if not BERTOPIC_AVAILABLE:
+        missing_libs.append("bertopic")
+    
+    with st.expander("📋 Installa Librerie Enterprise Mancanti"):
+        st.code(f"""
+# Librerie mancanti: {', '.join(missing_libs)}
+
+# Installazione completa:
+pip install bertopic sentence-transformers networkx scikit-learn umap-learn plotly
+
+# HDBSCAN opzionale (richiede Visual Studio Build Tools su Windows):
+pip install hdbscan
+
+# Se HDBSCAN fallisce, il tool userà KMeans (funziona comunque!)
+        """)
+
+# ============================================================================
+# CONFIGURAZIONE ENTERPRISE FEATURES
+# ============================================================================
+
+# Mappa funzionalità disponibili
+ENTERPRISE_FEATURES = {
+    'multi_dimensional_sentiment': True,  # Usa sempre OpenAI
+    'aspect_based_analysis': True,       # Usa sempre OpenAI  
+    'topic_modeling': BERTOPIC_AVAILABLE,
+    'customer_journey': True,            # Logic-based
+    'semantic_similarity': SENTENCE_TRANSFORMERS_AVAILABLE,
+    'visualizations': PLOTLY_AVAILABLE
+}
+
+# Report funzionalità
+st.sidebar.markdown("### 🔧 Enterprise Features Status")
+for feature, available in ENTERPRISE_FEATURES.items():
+    status = "✅" if available else "❌"
+    feature_name = feature.replace('_', ' ').title()
+    st.sidebar.markdown(f"{status} {feature_name}")
+
+# Info clustering per Topic Modeling
+if BERTOPIC_AVAILABLE:
+    clustering_info = "🔬 HDBSCAN" if HDBSCAN_AVAILABLE else "🔄 KMeans"
+    st.sidebar.markdown(f"**Topic Clustering:** {clustering_info}")
+
+@dataclass
+class EnterpriseAnalysisResult:
+    """Struttura unificata per risultati enterprise"""
+    sentiment_analysis: Dict
+    aspect_analysis: Dict
+    topic_modeling: Dict
+    customer_journey: Dict
+    similarity_analysis: Dict
+    performance_metrics: Dict
+
+
+# Configurazione logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# Configurazione pagina
 st.set_page_config(
-    page_title="Review NLZYR",
+    page_title="REVIEW TOOL BOSCOLO VIAGGI",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -70,44 +205,6 @@ except (KeyError, FileNotFoundError):
     st.warning("**Importante:** Le chiavi (es. `dfseo_login`) devono essere in **minuscolo**.")
     st.stop()
 
-# ============================================================================
-# IMPORT LIBRERIE PESANTI (DOPO LE CREDENZIALI)
-# ============================================================================
-PLOTLY_AVAILABLE = False
-ML_CORE_AVAILABLE = False
-SENTENCE_TRANSFORMERS_AVAILABLE = False
-HDBSCAN_AVAILABLE = False
-BERTOPIC_AVAILABLE = False
-
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    from sklearn.cluster import KMeans
-    ML_CORE_AVAILABLE = True
-    import networkx as nx
-    from sentence_transformers import SentenceTransformer
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-    import hdbscan
-    HDBSCAN_AVAILABLE = True
-    from bertopic import BERTopic
-    BERTOPIC_AVAILABLE = True
-except ImportError as e:
-    st.error(f"**ERRORE: LIBRERIA MANCANTE!**\n\nL'applicazione non può partire perché manca una dipendenza: **{e.name}**.")
-    st.info("Assicurati di aver installato tutte le librerie necessarie. Esegui: `pip install -r requirements.txt`")
-    st.stop()
-
-
-# ============================================================================
-# CONFIGURAZIONE GLOBALE E STATO
-# ============================================================================
-
-ENTERPRISE_LIBS_AVAILABLE = all([PLOTLY_AVAILABLE, ML_CORE_AVAILABLE, SENTENCE_TRANSFORMERS_AVAILABLE, BERTOPIC_AVAILABLE])
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
 
 # CSS personalizzato - Design Moderno Nero/Viola/Multi-platform
 st.markdown("""
@@ -516,7 +613,7 @@ class EnterpriseReviewsAnalyzer:
         self.business_aspects = {
             'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
             'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
-            'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
+            'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff', "guide"],
             'generale': ['servizio', 'qualità', 'prezzo', 'staff', 'esperienza', 'velocità', 'ambiente']
         }
         
@@ -8437,7 +8534,6 @@ with tab6:  # Export
                            summary_lines.extend([
                                "",
                                "---",
-                               "For support: michiamo@antoniodeluca.me",
                                "Tool Repository: Reviews Analyzer v2.0"
                            ])
                            
@@ -8509,7 +8605,7 @@ with tab6:  # Export
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, var(--dark-purple) 0%, var(--primary-purple) 25%, var(--trustpilot-green) 50%, var(--google-blue) 75%, var(--tripadvisor-green) 100%); border-radius: 15px;">
-    <p style="color: white; font-size: 1.2em; font-weight: 600;">🌍 <strong>REVIEWS ANALYZER</strong></p>
+    <p style="color: white; font-size: 1.2em; font-weight: 600;">🌍 <strong>REVIEWS NLYZR</strong></p>
     <p style="color: white;">Reviews: Trustpilot • Google • TripAdvisor • Yelp • Reddit | Keywords: Google Ads</p>
     <p style="color: white;">Developed with love 🧡 • Powered by DataForSEO & OpenAI</p>
 </div>
@@ -8518,9 +8614,8 @@ st.markdown("""
 # Sidebar Credits esteso
 with st.sidebar:
     st.markdown("---")
-    st.markdown("### 🔧 Sviluppato da")
-    st.markdown("**Antonio Deluca**")
-    st.markdown("📧 michiamo@antoniodeluca.me")
+    st.markdown("### 🔧 Sviluppato con")
+    st.markdown("**la pazienza**")
     
     st.markdown("### 🌍 Piattaforme v2.1")
     platform_badges = [
