@@ -6449,18 +6449,20 @@ with tab2:
                 # Raccogli top amenities per schema
                 top_amenities = sorted(all_amenities.items(), key=lambda x: x[1], reverse=True)[:15] if 'all_amenities' in locals() else []
                 
-            schema_example = {
-        "@context": "https://schema.org",
-        "@type": "TravelAgency", # TIPO CORRETTO PER TOUR OPERATOR
-        "name": "Boscolo Viaggi",
-        "serviceType": "Pacchetti turistici e viaggi organizzati",
-        "review": {
-            "@type": "Review",
-            "reviewRating": {
-                "@type": "Rating",
-                "ratingValue": "4.2"
-            },
-            "author": {"@type": "Person", "name": "Utente Esempio"}
+            schema_example = {"@context": "https://schema.org",
+                    "@type": "TravelAgency", # TIPO CORRETTO PER TOUR OPERATOR
+                    "name": "Boscolo Viaggi",
+                    "serviceType": "Pacchetti turistici e viaggi organizzati",
+                    "review": {
+                        "@type": "Review",
+                        "reviewRating": {
+                            "@type": "Rating",
+                            "ratingValue": "4.2"
+                        },
+                        "author": {"@type": "Person", "name": "Utente Esempio"}
+                    }
+                }
+
         }
     }
 
