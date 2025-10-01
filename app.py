@@ -1993,7 +1993,7 @@ def fetch_reddit_discussions(reddit_urls_input, subreddits=None, limit=1000):
 # --- INTERFACCIA PRINCIPALE ---
 
 # Header con nuovo design multi-platform
-st.markdown("<h1 class='main-header'>🌍 REVIEWS NLZYR</h1>", unsafe_allow_html=True)
+st.markdown("<h1 class='main-header'>🌍 BOSCOLO VIAGGI REVIEWS CHECKER by Maria</h1>", unsafe_allow_html=True)
 
 # Sidebar con statistiche multi-platform
 with st.sidebar:
