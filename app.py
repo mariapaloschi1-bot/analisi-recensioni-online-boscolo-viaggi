@@ -583,7 +583,7 @@ class EnterpriseReviewsAnalyzer:
        self.business_aspects = {
             'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
             'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
-            'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
+            'retail': ['accompagnatore', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff', ‘guida’],
             'tour_operator': [
                 'organizzazione', 
                 'itinerario', 
@@ -7434,19 +7434,13 @@ with tab4:  # Brand Keywords Analysis
     with col1:
         brand_name = st.text_input(
             "📝 Nome del Brand",
-            placeholder="Es: Hotel Excelsior Roma",
+            placeholder="Es: Boscolo Viaggi Italia",
             help="Inserisci il nome del brand da analizzare"
         )
         
         # Seed keywords suggestions
         if brand_name:
-            suggested_seeds = [
-                brand_name,
-                f"{brand_name} recensioni",
-                f"{brand_name} opinioni",
-                f"{brand_name} prezzi",
-                f"{brand_name} come funziona"
-            ]
+           suggested_seeds = [ brand_name, f"{brand_name} recensioni", f"{brand_name} opinioni", f"{brand_name} itinerari", f"{brand_name} tour", f"{brand_name} guide" ]
             
             st.markdown("**🎯 Seed Keywords Suggerite:**")
             seed_keywords = st.text_area(
@@ -8653,5 +8647,4 @@ with st.sidebar:
 
 if __name__ == "__main__":
     logger.info("Reviews Analyzer Tool v2.0 avviato")
-
 
