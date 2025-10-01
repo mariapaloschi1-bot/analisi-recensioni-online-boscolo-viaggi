@@ -6467,7 +6467,6 @@ schema_example = {
                         },
                         "author": {"@type": "Person", "name": "Utente Esempio"}
                     }
-                }
 
                 st.code(json.dumps(schema_example, indent=2), language='json')
             
