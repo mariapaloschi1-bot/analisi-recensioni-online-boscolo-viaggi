@@ -23,6 +23,12 @@ from urllib.parse import urlparse, parse_qs
 import threading
 from typing import Dict, List, Tuple, Optional  # AGGIUNTO per type hints
 from dataclasses import dataclass  # AGGIUNTO per strutture dati
+from input_utils import (
+    extract_google_place_id_from_url,
+    validate_extended_input,
+    validate_reddit_input,
+    handle_google_id_input
+)
 
 # ============================================================================
 # ENTERPRISE LIBRARIES - INIZIALIZZAZIONE ROBUSTA
