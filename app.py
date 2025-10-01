@@ -6471,10 +6471,20 @@ with tab2:
 
                 st.code(json.dumps(schema_example, indent=2), language='json')
                 
-                st.download_button(
+               st.download_button(
                     "💾 Download FAQ Schema JSON",
-            with seo_tabs[4]:  # AI SEO Strategy
-                st.markdown("#### 🤖 AI-Powered SEO Strategy"))
+                    data=json.dumps(faq_schema, indent=2, ensure_ascii=False),
+                    file_name=f"faq_schema_{datetime.now().strftime('%Y%m%d')}.json",
+                    mime="application/json"
+                ) # <--- La parentesi mancante ora è chiusa qui
+
+            with seo_tabs[4]:  # AI SEO Strategy - Inizia il nuovo blocco logico
+                st.markdown("#### 🤖 AI-Powered SEO Strategy")
+
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("🧠 Genera Strategia SEO con AI", type="primary", use_container_width=True):
+                        with st.spinner("🤖 Generazione strategia SEO Strategy")
                 
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
