@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reviews Analyzer v2.0 ENTERPRISE EDITION
+Reviews Analyzer v2.0 ENTERPRISE EDITIOn
 Supports: Trustpilot, Google Reviews, TripAdvisor, Yelp (via Extended Reviews), Reddit
 Advanced Analytics: Multi-Dimensional Sentiment, ABSA, Topic Modeling, Customer Journey
 Autore: Mari
