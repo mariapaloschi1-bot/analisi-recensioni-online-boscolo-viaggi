@@ -581,7 +581,7 @@ class EnterpriseReviewsAnalyzer:
         ]
         
        self.business_aspects = {
-          'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
+     'hotel': ['servizio', 'pulizia', 'location', 'colazione', 'camera', 'staff', 'prezzo', 'wifi'],
           'ristorante': ['cibo', 'servizio', 'ambiente', 'prezzo', 'staff', 'velocità', 'porzioni', 'qualità'],
           'retail': ['prodotto', 'prezzo', 'servizio', 'consegna', 'qualità', 'varietà', 'staff'],
           'tour_operator': [
