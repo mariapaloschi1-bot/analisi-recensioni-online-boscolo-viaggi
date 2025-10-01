@@ -28,7 +28,7 @@ from dataclasses import dataclass  # AGGIUNTO per strutture dati
 # ENTERPRISE LIBRARIES - INIZIALIZZAZIONE ROBUSTA
 # ============================================================================
 
-# Flags di disponibilità
+# Flags di disponibilitl
 ENTERPRISE_LIBS_AVAILABLE = False
 HDBSCAN_AVAILABLE = False
 BERTOPIC_AVAILABLE = False
